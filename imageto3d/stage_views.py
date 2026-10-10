@@ -9,7 +9,7 @@ from .stages import run_stage
 def load_model(config: Config, queue):
     from hy3dgen.rembg import BackgroundRemover
     model = {"rembg": BackgroundRemover(), "pipe": None}
-    if any(asset.mode == "multiview" for asset in queue):
+    if any(asset.generated_views for asset in queue):
         model["pipe"] = load_multiview(config)
     return model
 
@@ -70,6 +70,22 @@ def process(model, asset: Asset, config: Config) -> None:
         reference.save(asset.view_path("front"))
         save_sheet([reference], asset.views_sheet)
         return
+    from PIL import Image, ImageOps
+    views = {}
+    for name, path in asset.supplied.items():
+        # Supplied views are used as given; the shape stage removes their background.
+        views[name] = ImageOps.exif_transpose(Image.open(path)).convert("RGB")
+        print(f"  {name}: supplied {os.path.basename(path)}", flush=True)
+    if asset.generated_views:
+        views.update(generate(model, asset, config, reference))
+    for name in ("left", "back", "right"):
+        views[name].save(asset.view_path(name), quality=95)
+    # Write the front last: its timestamp marks the view set as complete.
+    reference.save(asset.view_path("front"))
+    save_sheet([reference, views["left"], views["back"], views["right"]], asset.views_sheet)
+
+
+def generate(model, asset: Asset, config: Config, reference):
     from scripts.inference_i2mv_sdxl import run_pipeline
     prompt, negative = config.view_prompts(asset.category)
     azimuths = config.view_azimuths
@@ -91,12 +107,8 @@ def process(model, asset: Asset, config: Config) -> None:
     if len(generated) != len(azimuths):
         raise RuntimeError(f"expected {len(azimuths)} views, received {len(generated)}")
     # MV-Adapter azimuth 90 looks at the subject's left side, matching Hunyuan3D-2mv's "left" view.
-    views = {name: generated[azimuths.index(angle)] for name, angle in (("left", 90), ("back", 180), ("right", 270))}
-    for name, image in views.items():
-        image.convert("RGB").save(asset.view_path(name), quality=95)
-    # Write the front last: its timestamp marks the view set as complete.
-    reference.save(asset.view_path("front"))
-    save_sheet([reference, views["left"], views["back"], views["right"]], asset.views_sheet)
+    angles = {"left": 90, "back": 180, "right": 270}
+    return {name: generated[azimuths.index(angles[name])].convert("RGB") for name in asset.generated_views}
 
 
 if __name__ == "__main__":

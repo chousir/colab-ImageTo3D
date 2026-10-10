@@ -13,13 +13,16 @@ img("character-novice_female-front.jpg")
 img("monster-gelly-front.png")
 img("used-character-old-front.jpg")
 img("sword-dagger-front.jpg")           # unknown category
-img("character-novice_female-back.jpg") # not a front
+img("character-novice_female-back.jpg") # supplied back view for the character
 img("Character-Novice_Female-front.webp") # duplicate key (case-insensitive)
 img("weapon-initiate_dagger-stuff.png")
 img("appearance-hair_twin_tails-stuff.jpg")
 img("armor-novice_helmet-front.png")     # front suffix also accepted
 img("bigobject-kronenberg_main_gate-building.png")
 img("object-street_lamp-building.png")
+img("bigobject-kronenberg_main_gate-back.png")   # supplied view
+img("bigobject-kronenberg_main_gate-right.png")  # supplied view
+img("monster-unknown-back.png")                # extra view without a main image: ignored
 cfg_path = os.path.join(root, "config.json"); cfg.save(cfg_path)
 loaded = cfgmod.load(cfg_path); assert loaded == cfg
 
@@ -28,7 +31,12 @@ print("pending:", [a.key for a in pend])
 assert [a.key for a in pend] == ["character-novice_female", "monster-gelly", "weapon-initiate_dagger",
                                   "appearance-hair_twin_tails", "armor-novice_helmet",
                                   "bigobject-kronenberg_main_gate", "object-street_lamp"], [a.key for a in pend]
-assert [a.mode for a in pend] == ["multiview", "multiview"] + ["single"] * 5
+assert [a.mode for a in pend] == ["multiview", "multiview", "single", "single", "single", "multiview", "single"]
+gate = [a for a in pend if a.asset_id == "kronenberg_main_gate"][0]
+assert sorted(gate.supplied) == ["back", "right"] and gate.generated_views == ["left"], gate
+assert gate.shape_views == ["front", "left", "back", "right"]
+assert pend[0].shape_views == ["front", "left", "back"] and pend[0].generated_views == ["left", "right"]
+assert pend[1].generated_views == ["left", "back", "right"]
 assert cfg.preset("bigobject", "texture_size") == 4096 and cfg.preset("weapon", "texture_size") == 2048
 assert cfg.preset("bigobject", "min_component_ratio") == 0.0002 and cfg.preset("object", "render_size") == 1024
 assert "bald" in cfg.view_prompts("character")[0] and "bald" not in cfg.view_prompts("monster")[0]
@@ -66,8 +74,8 @@ assert "hunyuan3d-character-novice_female.glb" in out and "hunyuan3d-weapon-init
 assert not os.path.exists(os.path.join(root, "work", "weapon-initiate_dagger", "left.jpg"))
 groups = [c for c in calls if c[0] in ("views", "shape")]
 assert ("views", ("weapon-initiate_dagger", "appearance-hair_twin_tails", "armor-novice_helmet",
-                  "bigobject-kronenberg_main_gate", "object-street_lamp")) in groups, groups
-assert "hunyuan3d-bigobject-kronenberg_main_gate.glb" in out
+                  "object-street_lamp")) in groups, groups
+assert ("views", ("character-novice_female", "monster-gelly", "bigobject-kronenberg_main_gate")) in groups, groups
 meta = json.load(open(os.path.join(cfg.out_dir, "hunyuan3d-character-novice_female.json")))
 print("height", meta["height_m"], "size", meta["size_m"])
 assert abs(meta["height_m"] - 1.65) < 0.01
@@ -76,6 +84,10 @@ assert os.path.exists(os.path.join(cfg.input_dir, "used-character-novice_female-
 gelly = [a for a in assets.pending(cfg) if a.key == "monster-gelly"][0]; print("gelly status:", assets.read_status(gelly))
 assert assets.read_status(gelly)["failures"] == 1
 calls.clear(); run.run_round(cfg_path, cfg); print("round2:", calls)
+assert calls[0] == ("shape", ("bigobject-kronenberg_main_gate", "monster-gelly")), calls  # failed asset last
+assert "hunyuan3d-bigobject-kronenberg_main_gate.glb" in os.listdir(cfg.out_dir)
+assert {"used-bigobject-kronenberg_main_gate-back.png", "used-bigobject-kronenberg_main_gate-right.png",
+        "used-bigobject-kronenberg_main_gate-building.png"} <= set(os.listdir(cfg.input_dir))
 assert assets.blocked(gelly, cfg)
 calls.clear(); n = run.run_round(cfg_path, cfg); print("round3 worked:", n, calls)
 assert n == 0

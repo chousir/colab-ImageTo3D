@@ -32,9 +32,20 @@
    | `appearance` | `appearance-hair_twin_tails-stuff.png` | 同上 | 40,000 |
    | `weapon` | `weapon-initiate_dagger-stuff.png` | 同上 | 20,000 |
    | `object` | `object-street_lamp-building.png`、`object-stone_a-building.png` | 同上（小型場景物件） | 30,000 |
-   | `bigobject` | `bigobject-kronenberg_main_gate-building.png` | 同上，**最高精度**：形狀網格 512、4K 貼圖（渲染 2048）、保留細小的裝飾零件 | 200,000 |
+   | `bigobject` | `bigobject-kronenberg_main_gate-building.png` | **多視角**（同 character，可另外提供視角圖），**最高精度**：形狀網格 512、4K 貼圖（渲染 2048）、保留細小的裝飾零件 | 200,000 |
 
    `equipment`、`prop`、`environment` 也可以用，處理方式同 armor。結尾寫 `-front`、`-stuff` 或 `-building` 都可以。除了 bigobject（512），形狀解析度（octree）都是 384，物品只是面數較少。
+
+   **多視角的額外圖（選用）**：character、monster、bigobject 可以另外放同 id 的 `-left`、`-back`、`-right` 圖，例如：
+
+   ```text
+   bigobject-kronenberg_main_gate-building.png   主圖（正面）
+   bigobject-kronenberg_main_gate-back.png       背面
+   bigobject-kronenberg_main_gate-left.png       左側（選用）
+   bigobject-kronenberg_main_gate-right.png      右側（選用）
+   ```
+
+   有放的角度直接採用，沒放的才用 MV-Adapter 生成；提供的 right 也會一起拿來建形狀（生成的 right 只供檢視）。方向規則：**left 圖裡主體的正面朝向畫面左邊，right 圖朝向右邊**（left 是面對正面時往你的右手邊繞 90 度看到的樣子，跟 Hunyuan3D-2mv 範例一致）。用 Gemini 生成時，可以要求「same building, viewed from directly behind / from its left side, same lighting, plain background」。完成後這些額外圖也會改名為 `used-…`。
 
    **bigobject** 是 T4 能做到的最高設定，每棟可能要 15～30 分鐘。形狀網格 512 或 4K 貼圖放不下時，會自動改用 384 網格或 2048 貼圖重試，不會讓整批失敗。貼圖細節仍受限於貼圖模型每個視角 512 像素的生成解析度，近看大型建築時，細部材質建議在 Godot 疊加可重複的材質貼圖。
 3. 依序執行區塊 1～4。區塊 4 會處理 `in/` 裡所有未使用的正面圖；開著時繼續丟新圖也會接著做，閒置 `IDLE_STOP_MINUTES`（預設 30 分鐘）後自動停止。
@@ -57,8 +68,8 @@ full body front view, A-pose, plain white background
 
 ```text
 in/<類別>-<id>-<front|stuff>.png
-  │ 1. views   去背；character／monster 再用 MV-Adapter SDXL 生成左、背、右視角
-  │ 2. shape   character／monster：Hunyuan3D-2mv 用正、左、背；其他：Hunyuan3D-2 只用正面 → 移除碎片 → 減面
+  │ 1. views   去背；character／monster／bigobject 採用你提供的額外視角，缺的再用 MV-Adapter SDXL 生成
+  │ 2. shape   多視角類別：Hunyuan3D-2mv 用正、左、背（有提供 right 時加上 right）；其他：Hunyuan3D-2 只用正面 → 移除碎片 → 減面
   │ 3. paint   Hunyuan3D-2 依正面圖上貼圖
   │ 4. export  縮放到真實尺寸、腳踩地面、PBR 材質 → out/，正面圖改名 used-…
 out/hunyuan3d-<類別>-<id>.glb / .json / -views.jpg

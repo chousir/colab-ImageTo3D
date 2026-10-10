@@ -46,6 +46,8 @@ def run_round(config_path: str, config: Config) -> int:
                  and all(not asset.needs(previous, config) for previous in STAGES[:STAGES.index(stage)])]
         if not queue:
             continue
+        # Assets that failed before go last, so a crashing image cannot hold back the rest of its group.
+        queue.sort(key=lambda asset: asset_store.read_status(asset).get("failures", 0))
         # Views and shape load different models per mode, so each mode gets its own process.
         groups = ([[asset for asset in queue if asset.mode == mode] for mode in ("multiview", "single")]
                   if stage in ("views", "shape") else [queue])

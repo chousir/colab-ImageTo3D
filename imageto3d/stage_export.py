@@ -67,6 +67,8 @@ def process(_, asset: Asset, config: Config) -> None:
         "license_note": ("Generated with Tencent Hunyuan3D-2 (Tencent Hunyuan Community License) from views made "
                          "with MV-Adapter on SDXL. Not on the RagnarokChange 04-D03 whitelist until approved."),
         "source_image": os.path.basename(asset.source),
+        "supplied_views": {view: os.path.basename(path) for view, path in asset.supplied.items()},
+        "generated_views": asset.generated_views,
         "head_mode": config.head_mode,
         "height_m": round(float(extents[1]), 3),
         "size_m": [round(float(value), 3) for value in extents],
@@ -87,13 +89,16 @@ def process(_, asset: Asset, config: Config) -> None:
     print(f"  {os.path.basename(glb_path)}: {metadata['faces']:,} faces, "
           f"{extents[0]:.2f} x {extents[1]:.2f} x {extents[2]:.2f} m", flush=True)
 
-    # Drive now holds the GLB, so the front can be marked used without risking the only copy.
-    if config.mark_used and os.path.exists(asset.source):
-        used = os.path.join(os.path.dirname(asset.source), "used-" + os.path.basename(asset.source))
+    # Drive now holds the GLB, so the inputs can be marked used without risking the only copy.
+    # The main image goes last: once it is renamed the asset is no longer pending.
+    for source in list(asset.supplied.values()) + [asset.source]:
+        if not config.mark_used or not os.path.exists(source):
+            continue
+        used = os.path.join(os.path.dirname(source), "used-" + os.path.basename(source))
         if os.path.exists(used):
             print(f"  WARNING: {os.path.basename(used)} already exists; source left in place", flush=True)
         else:
-            os.replace(asset.source, used)
+            os.replace(source, used)
 
 
 if __name__ == "__main__":

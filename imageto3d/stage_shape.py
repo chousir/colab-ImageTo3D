@@ -53,7 +53,7 @@ def process(model, asset: Asset, config: Config) -> None:
 
     preset = config.presets[asset.category]
     if asset.mode == "multiview":
-        image = {view: prepare(model, asset.view_path(view)) for view in ("front", "left", "back")}
+        image = {view: prepare(model, asset.view_path(view)) for view in asset.shape_views}
     else:
         image = prepare(model, asset.view_path("front"))
     steps = 5 if model["turbo"] else config.shape_steps
