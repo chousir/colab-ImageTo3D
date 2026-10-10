@@ -29,6 +29,7 @@ Google Drive / MyDrive / RagnarokChange / hunyuan3d /
 ├── out/                 # 完成的 GLB 與 JSON metadata
 ├── hf_cache/            # Hugging Face 模型權重快取
 ├── rembg_cache/         # 去背用 U2Net 權重快取
+├── work/              # 形狀與貼圖的中間檔；runtime 中斷後可從區塊 7 接續
 └── wheels/              # 編譯好的 custom_rasterizer wheel 與 mesh_processor（依 Python/torch/GPU 分資料夾）
 ```
 
@@ -106,6 +107,6 @@ out/hunyuan3d2-character-novice_female.json
 - `VIEW_COUNT`、`VIEW_STEPS`、`VIEW_SEED`、`VIEW_PROMPT`、`VIEW_NEGATIVE_PROMPT`：視角數量、步數、種子與提示詞。
 - `SHAPE_MODEL`、`SHAPE_FLASHVDM`、`PAINT_MODEL`：形狀與貼圖模型版本。
 - `PRESETS`：各類別的面數上限與 octree 設定。
-- `TEXTURE_SIZE`、`RENDER_SIZE`、`LOW_VRAM`、`SEED`：貼圖解析度、顯存模式及形狀種子。
+- `TEXTURE_SIZE`、`RENDER_SIZE`、`LOW_VRAM`、`SEED`：貼圖解析度、顯存模式及形狀種子。免費版請保持 `LOW_VRAM = False`：開啟後貼圖模型會放進只有 12.7 GB 的系統 RAM。
 
 模型輸出受輸入圖、種子和模型限制；生成的背面或遮擋細節不保證完全符合概念圖，請先檢視多視角，必要時換種子或在 Blender 修整。各模型及權重仍受其各自授權條款限制；使用前請查看對應模型頁與授權。
