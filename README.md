@@ -54,7 +54,7 @@ Colab 的執行環境則不同：Hunyuan3D/MV-Adapter 程式碼與 Python 套件
 
 選項含義：
 
-- `VIEW_COUNT = 6`：MV-Adapter 官方的 6 視角設定，約需 14 GB GPU VRAM。T4 若 OOM，改為 `4`（只生成 front/left/back/right），再重跑區塊 2、4、5。原本的 SD 2.1 備案已移除：`stabilityai/stable-diffusion-2-1-base` 已從 Hugging Face 下架。
+- `VIEW_COUNT = 4`（預設）：只生成 front/left/back/right，較省 T4 顯存。改為 `6` 是 MV-Adapter 官方的 6 視角設定，約需 14 GB GPU VRAM；若 OOM 改回 `4`，再重跑區塊 2、4、5。原本的 SD 2.1 備案已移除：`stabilityai/stable-diffusion-2-1-base` 已從 Hugging Face 下架。
 - `SHAPE_MODEL` 的完整模型較慢、步數較多；`...-turbo` 較快。兩者都是 Hunyuan 多視角形狀模型。
 - `SHAPE_FLASHVDM`：turbo 形狀模型使用官方 FlashVDM 加速解碼；若出錯改為 `False`。
 - `PAINT_MODEL` 的完整模型較慢；`...-turbo` 較快。
