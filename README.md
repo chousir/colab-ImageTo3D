@@ -15,7 +15,7 @@
 | Hugging Face 套件 | `transformers==4.57.3`、`diffusers==0.34.0`、`huggingface_hub==0.36.0`、`accelerate==1.10.1`、`peft==0.17.1` |
 | 3D／網格套件 | `pymeshlab==2025.7.post1`、`xatlas==0.0.11`、`trimesh==4.8.3`、`pygltflib==1.16.5`、`nvdiffrast` v0.3.3 |
 | 去背 | `rembg==2.0.67`、`pymatting==1.1.14`、`onnxruntime==1.22.1` |
-| 其他 | `omegaconf==2.3.0`、`einops==0.8.1`、`pybind11==3.0.1`、`ninja==1.13.0`、`pooch==1.8.2`、`jsonschema==4.25.1` |
+| 其他 | `omegaconf==2.3.0`、`einops==0.8.1`、`pybind11==3.0.1`、`ninja==1.13.0`、`pooch==1.8.2`、`jsonschema==4.25.1`、`jaxtyping==0.3.2`、`typeguard==4.4.4` |
 
 完整清單在區塊 3 的 `PINNED`。安裝時會以 Colab 現有的 torch、numpy、scipy、opencv 等版本作為 constraints，避免把它們升級而弄壞 CUDA 擴充。Colab 只會保留舊 runtime 版本一段時間；若 `2026.07` 從選單消失，需改用新版 runtime，並同步更新區塊 1 的版本檢查與區塊 3 的 `PINNED`。
 
