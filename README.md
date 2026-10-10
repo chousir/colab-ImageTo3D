@@ -84,8 +84,8 @@ character-novice_female-front.jpg
 2. 執行區塊 1 檢查 GPU，接著執行區塊 2 掛載 Drive、建立資料夾並檢查空間。首次授權時依 Colab 提示允許存取 Drive。
 3. 將符合命名規則的正面圖放進 `MyDrive/RagnarokChange/hunyuan3d/in/`。
 4. 執行區塊 3 安裝環境。新 runtime 安裝完成會自動重新啟動；重啟後依序重跑區塊 1、2、3。之後同一個 runtime 的區塊 3 會快速略過安裝。
-5. 執行區塊 4 載入圖片清單，再執行區塊 5 生成並顯示正面、左側、背面、右側參考圖。**此處會停下來等你檢查**，不會自動開始 3D；即使按「全部執行」，區塊 6 也會在區塊 5 剛結束時自動停住。left 應是主體的左側（角色面朝畫面左方），與 Hunyuan3D-2mv 範例圖的方向一致。
-6. 視角不滿意時，在區塊 2 修改 `VIEW_SEED`，重跑區塊 2、4、5 生成另一組；滿意後才手動執行區塊 6。
+5. 執行區塊 4 載入圖片清單，再執行區塊 5 生成並顯示正面、左側、背面、右側參考圖。預設會接著自動做 3D，可用「全部執行」一次跑完；若想先檢查視角，在區塊 2 勾選 `PAUSE_FOR_REVIEW`，「全部執行」就會在區塊 6 停住。left 應是主體的左側（角色面朝畫面左方），與 Hunyuan3D-2mv 範例圖的方向一致。
+6. 視角不滿意時，在區塊 2 修改 `VIEW_SEED`，重跑區塊 2、4、5 生成另一組，再執行區塊 6。
 7. 區塊 6 使用 front/left/back 生成形狀；right 會保留供檢視，但 Hunyuan3D-2mv 不以它作為條件。區塊 7 再產生貼圖。
 8. 執行區塊 8，將 GLB 和 metadata 複製到 Drive 的 `out/`，並下載 zip。確認 GLB 已存入 Drive 後，原始正面圖才會加上 `used-` 前綴，避免下次重複處理。
 
@@ -105,6 +105,7 @@ out/hunyuan3d2-character-novice_female.json
 - `DRIVE_ROOT`：Drive 專案根目錄。
 - `CACHE_MODELS_ON_DRIVE`：預設 `True`，把 Hugging Face 和去背模型快取放在 Drive。
 - `VIEW_COUNT`、`VIEW_STEPS`、`VIEW_SEED`、`VIEW_PROMPT`、`VIEW_NEGATIVE_PROMPT`：視角數量、步數、種子與提示詞。
+- `PAUSE_FOR_REVIEW`：預設 `False`，「全部執行」一路跑到存檔；設為 `True` 會在區塊 6 停下讓你先檢查視角。
 - `SHAPE_MODEL`、`SHAPE_FLASHVDM`、`PAINT_MODEL`：形狀與貼圖模型版本。
 - `PRESETS`：各類別的面數上限與 octree 設定。
 - `TEXTURE_SIZE`、`RENDER_SIZE`、`LOW_VRAM`、`SEED`：貼圖解析度、顯存模式及形狀種子。免費版請保持 `LOW_VRAM = False`：開啟後貼圖模型會放進只有 12.7 GB 的系統 RAM。
