@@ -1,0 +1,144 @@
+"""Finds pending front images and tracks each asset's progress through files in Drive."""
+import glob
+import json
+import os
+import time
+from dataclasses import dataclass
+from typing import Dict, List, Optional
+
+from .config import CATEGORIES, SOURCE_TAG, Config
+
+IMAGE_EXTENSIONS = (".png", ".jpg", ".jpeg", ".webp")
+VIEW_NAMES = ("front", "left", "back", "right")
+_warned_duplicates = set()
+
+
+@dataclass
+class Asset:
+    category: str
+    asset_id: str
+    source: str
+    work: str
+
+    @property
+    def key(self) -> str:
+        return f"{self.category}-{self.asset_id}"
+
+    @property
+    def output_name(self) -> str:
+        return f"{SOURCE_TAG}-{self.category}-{self.asset_id}"
+
+    def view_path(self, view: str) -> str:
+        return os.path.join(self.work, "front.png" if view == "front" else f"{view}.jpg")
+
+    @property
+    def views_sheet(self) -> str:
+        return os.path.join(self.work, "views.jpg")
+
+    @property
+    def shape_path(self) -> str:
+        return os.path.join(self.work, "shape.glb")
+
+    @property
+    def textured_path(self) -> str:
+        return os.path.join(self.work, "textured.glb")
+
+    def output_path(self, config: Config, extension: str) -> str:
+        return os.path.join(config.out_dir, self.output_name + extension)
+
+    def needs(self, stage: str, config: Config) -> bool:
+        """True when the stage output is missing or older than its input."""
+        if stage == "views":
+            return _stale([self.view_path(view) for view in VIEW_NAMES], [self.source])
+        if stage == "shape":
+            return _stale([self.shape_path], [self.view_path(view) for view in VIEW_NAMES])
+        if stage == "paint":
+            return _stale([self.textured_path], [self.shape_path])
+        if stage == "export":
+            return _stale([self.output_path(config, ".glb")], [self.textured_path])
+        raise ValueError(stage)
+
+
+def _stale(outputs: List[str], inputs: List[str]) -> bool:
+    if not all(os.path.exists(path) for path in outputs):
+        return True
+    newest_input = max((os.path.getmtime(path) for path in inputs if os.path.exists(path)), default=0)
+    return min(os.path.getmtime(path) for path in outputs) < newest_input
+
+
+def parse_name(path: str) -> Optional[Dict[str, str]]:
+    stem = os.path.splitext(os.path.basename(path))[0].lower()
+    if stem.startswith("used-") or not stem.endswith("-front"):
+        return None
+    for category in CATEGORIES:
+        prefix = category + "-"
+        if stem.startswith(prefix):
+            asset_id = stem[len(prefix):-len("-front")]
+            if asset_id:
+                return {"category": category, "asset_id": asset_id}
+    return None
+
+
+def pending(config: Config) -> List[Asset]:
+    """Unused front images in Drive/in, oldest first so earlier uploads finish first."""
+    paths = [path for path in glob.glob(os.path.join(config.input_dir, "*"))
+             if path.lower().endswith(IMAGE_EXTENSIONS)]
+    assets: Dict[str, Asset] = {}
+    for path in sorted(paths, key=os.path.getmtime):
+        parsed = parse_name(path)
+        if parsed is None:
+            continue
+        key = f"{parsed['category']}-{parsed['asset_id']}"
+        if key in assets:
+            if path not in _warned_duplicates:
+                _warned_duplicates.add(path)
+                print(f"WARNING: duplicate front image for {key}; ignoring {os.path.basename(path)}", flush=True)
+            continue
+        assets[key] = Asset(parsed["category"], parsed["asset_id"], path, os.path.join(config.work_dir, key))
+    return list(assets.values())
+
+
+def find(config: Config, keys: List[str]) -> List[Asset]:
+    by_key = {asset.key: asset for asset in pending(config)}
+    return [by_key[key] for key in keys if key in by_key]
+
+
+# Failure bookkeeping: a stage writes a marker before each asset, so a crash (for example an
+# out-of-memory kill) can be charged to the asset that caused it.
+
+def _status_path(asset: Asset) -> str:
+    return os.path.join(asset.work, "status.json")
+
+
+def read_status(asset: Asset) -> Dict:
+    try:
+        with open(_status_path(asset)) as file:
+            return json.load(file)
+    except (OSError, ValueError):
+        return {"failures": 0}
+
+
+def write_status(asset: Asset, **updates) -> None:
+    os.makedirs(asset.work, exist_ok=True)
+    status = read_status(asset)
+    status.update(updates, updated_at=time.strftime("%Y-%m-%dT%H:%M:%S%z"))
+    with open(_status_path(asset), "w") as file:
+        json.dump(status, file, indent=2)
+
+
+def begin(asset: Asset, stage: str) -> None:
+    write_status(asset, running=stage)
+
+
+def succeed(asset: Asset, stage: str) -> None:
+    write_status(asset, running=None, last_stage=stage, last_error=None)
+
+
+def fail(asset: Asset, stage: str, error: str) -> None:
+    status = read_status(asset)
+    write_status(asset, running=None, failures=status.get("failures", 0) + 1,
+                 last_error=f"{stage}: {error}"[-2000:])
+
+
+def blocked(asset: Asset, config: Config) -> bool:
+    return read_status(asset).get("failures", 0) >= config.max_failures

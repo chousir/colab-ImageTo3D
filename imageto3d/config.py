@@ -1,0 +1,110 @@
+"""Pipeline settings shared by the notebook, the orchestrator and every stage process."""
+import json
+import os
+from dataclasses import asdict, dataclass, field
+from typing import Dict, List, Optional
+
+CATEGORIES = ("character", "monster", "equipment", "prop", "environment")
+
+# Output naming and license data follow RagnarokChange docs/04-art-pipeline.md section 6.2.
+SOURCE_TAG = "hunyuan3d"
+LICENSE_ID = "LicenseRef-Tencent-Hunyuan3D-Community"
+
+BALD_PROMPT = "completely bald head, shaved head, no hair, no headwear"
+BALD_NEGATIVE = "hair, hairstyle, ponytail, twin tails, braid, bangs, helmet, hat"
+
+
+@dataclass
+class Config:
+    drive_root: str
+    hf_home: str
+    rembg_home: str
+    hunyuan_repo: str = "/content/Hunyuan3D-2"
+    mv_repo: str = "/content/MV-Adapter"
+
+    # Multiview generation (MV-Adapter SDXL).
+    view_base_model: str = "stabilityai/stable-diffusion-xl-base-1.0"
+    view_vae_model: str = "madebyollin/sdxl-vae-fp16-fix"
+    view_adapter_repo: str = "huanngzh/mv-adapter"
+    view_adapter_commit: str = "4277e0018232bac82bb2c103caf0893cedb711be"
+    view_count: int = 4
+    view_size: int = 768
+    view_steps: int = 30
+    view_guidance: float = 3.0
+    view_seed: int = 1234
+    view_reference_scale: float = 1.0
+    view_prompt: str = ("same subject as the reference image, preserve its category, silhouette, colors and "
+                        "distinctive details, orthographic multi-view turnaround, plain neutral background, no text")
+    view_negative_prompt: str = "watermark, low quality, deformed, inconsistent design, extra objects, text"
+    # "bald": characters are generated without hair (hair and head are separate assets in RagnarokChange).
+    head_mode: str = "bald"
+
+    # Shape (Hunyuan3D-2mv).
+    hunyuan_commit: str = "f8db63096c8282cb27354314d896feba5ba6ff8a"
+    shape_model: str = "hunyuan3d-dit-v2-mv"
+    shape_steps: int = 50
+    shape_guidance: float = 5.0
+    shape_flashvdm: bool = True
+    shape_seed: int = 1234
+    presets: Dict[str, Dict[str, int]] = field(default_factory=lambda: {
+        "character": {"max_faces": 60000, "octree": 384},
+        "monster": {"max_faces": 40000, "octree": 384},
+        "equipment": {"max_faces": 15000, "octree": 384},
+        "prop": {"max_faces": 15000, "octree": 384},
+        "environment": {"max_faces": 100000, "octree": 512},
+    })
+    # Drop disconnected pieces smaller than this share of the largest piece (cloth fragments, specks).
+    min_component_ratio: float = 0.002
+
+    # Texture (Hunyuan3D-2 paint).
+    paint_model: str = "hunyuan3d-paint-v2-0"
+    texture_size: int = 2048
+    render_size: int = 1024
+    low_vram: bool = False
+
+    # Export: real-world height in meters per category (RagnarokChange 04 section 3); None keeps the size.
+    female_height_m: float = 1.65
+    male_height_m: float = 1.78
+    category_height_m: Dict[str, Optional[float]] = field(default_factory=lambda: {
+        "monster": None, "equipment": None, "prop": None, "environment": None,
+    })
+    mark_used: bool = True
+
+    # Batch runner.
+    poll_seconds: int = 120
+    idle_stop_minutes: int = 30
+    max_failures: int = 2
+    stage_timeout_minutes: int = 90
+
+    @property
+    def input_dir(self) -> str:
+        return os.path.join(self.drive_root, "in")
+
+    @property
+    def out_dir(self) -> str:
+        return os.path.join(self.drive_root, "out")
+
+    @property
+    def work_dir(self) -> str:
+        return os.path.join(self.drive_root, "work")
+
+    @property
+    def view_azimuths(self) -> List[int]:
+        return [0, 45, 90, 180, 270, 315] if self.view_count == 6 else [0, 90, 180, 270]
+
+    def view_prompts(self) -> List[str]:
+        prompt, negative = self.view_prompt, self.view_negative_prompt
+        if self.head_mode == "bald":
+            prompt = f"{prompt}, {BALD_PROMPT}"
+            negative = f"{negative}, {BALD_NEGATIVE}"
+        return [prompt, negative]
+
+    def save(self, path: str) -> None:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w") as file:
+            json.dump(asdict(self), file, indent=2)
+
+
+def load(path: str) -> Config:
+    with open(path) as file:
+        return Config(**json.load(file))
