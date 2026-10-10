@@ -57,19 +57,32 @@ def process(model, asset: Asset, config: Config) -> None:
     else:
         image = prepare(model, asset.view_path("front"))
     steps = 5 if model["turbo"] else config.shape_steps
-    mesh = model["pipe"](
-        image=image,
-        num_inference_steps=steps,
-        guidance_scale=config.shape_guidance,
-        octree_resolution=preset["octree"],
-        num_chunks=8000 if preset["octree"] <= 384 else 4000,
-        generator=torch.Generator(device="cuda").manual_seed(config.shape_seed),
-        output_type="trimesh",
-    )[0]
+
+    def generate(octree: int):
+        return model["pipe"](
+            image=image,
+            num_inference_steps=steps,
+            guidance_scale=config.shape_guidance,
+            octree_resolution=octree,
+            num_chunks=8000 if octree <= 384 else 4000,
+            generator=torch.Generator(device="cuda").manual_seed(config.shape_seed),
+            output_type="trimesh",
+        )[0]
+
+    octree = int(preset["octree"])
+    try:
+        mesh = generate(octree)
+    except torch.cuda.OutOfMemoryError:
+        if octree <= 384:
+            raise
+        # Fine grids for large buildings may not fit next to the model on a T4; retry at the standard grid.
+        print(f"  out of GPU memory at octree {octree}; retrying at 384", flush=True)
+        torch.cuda.empty_cache()
+        mesh = generate(384)
     raw_faces = len(mesh.faces)
     mesh = FloaterRemover()(mesh)
     mesh = DegenerateFaceRemover()(mesh)
-    mesh = drop_small_components(mesh, config.min_component_ratio)
+    mesh = drop_small_components(mesh, config.preset(asset.category, "min_component_ratio"))
     mesh = FaceReducer()(mesh, max_facenum=preset["max_faces"])
     mesh.export(asset.shape_path)
     print(f"  {raw_faces:,} -> {len(mesh.faces):,} faces", flush=True)

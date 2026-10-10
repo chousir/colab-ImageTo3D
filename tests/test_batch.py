@@ -18,14 +18,19 @@ img("Character-Novice_Female-front.webp") # duplicate key (case-insensitive)
 img("weapon-initiate_dagger-stuff.png")
 img("appearance-hair_twin_tails-stuff.jpg")
 img("armor-novice_helmet-front.png")     # front suffix also accepted
+img("bigobject-kronenberg_main_gate-building.png")
+img("object-street_lamp-building.png")
 cfg_path = os.path.join(root, "config.json"); cfg.save(cfg_path)
 loaded = cfgmod.load(cfg_path); assert loaded == cfg
 
 pend = assets.pending(cfg)
 print("pending:", [a.key for a in pend])
 assert [a.key for a in pend] == ["character-novice_female", "monster-gelly", "weapon-initiate_dagger",
-                                  "appearance-hair_twin_tails", "armor-novice_helmet"], [a.key for a in pend]
-assert [a.mode for a in pend] == ["multiview", "multiview", "single", "single", "single"]
+                                  "appearance-hair_twin_tails", "armor-novice_helmet",
+                                  "bigobject-kronenberg_main_gate", "object-street_lamp"], [a.key for a in pend]
+assert [a.mode for a in pend] == ["multiview", "multiview"] + ["single"] * 5
+assert cfg.preset("bigobject", "texture_size") == 4096 and cfg.preset("weapon", "texture_size") == 2048
+assert cfg.preset("bigobject", "min_component_ratio") == 0.0002 and cfg.preset("object", "render_size") == 1024
 assert "bald" in cfg.view_prompts("character")[0] and "bald" not in cfg.view_prompts("monster")[0]
 a = pend[0]
 assert all(a.needs(s, cfg) for s in run.STAGES)
@@ -60,7 +65,9 @@ out = sorted(os.listdir(cfg.out_dir)); print("out:", out)
 assert "hunyuan3d-character-novice_female.glb" in out and "hunyuan3d-weapon-initiate_dagger.glb" in out
 assert not os.path.exists(os.path.join(root, "work", "weapon-initiate_dagger", "left.jpg"))
 groups = [c for c in calls if c[0] in ("views", "shape")]
-assert ("views", ("weapon-initiate_dagger", "appearance-hair_twin_tails", "armor-novice_helmet")) in groups, groups
+assert ("views", ("weapon-initiate_dagger", "appearance-hair_twin_tails", "armor-novice_helmet",
+                  "bigobject-kronenberg_main_gate", "object-street_lamp")) in groups, groups
+assert "hunyuan3d-bigobject-kronenberg_main_gate.glb" in out
 meta = json.load(open(os.path.join(cfg.out_dir, "hunyuan3d-character-novice_female.json")))
 print("height", meta["height_m"], "size", meta["size_m"])
 assert abs(meta["height_m"] - 1.65) < 0.01

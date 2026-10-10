@@ -15,10 +15,13 @@ CATEGORY_MODES = {
     "equipment": "single",
     "prop": "single",
     "environment": "single",
+    "object": "single",
+    "bigobject": "single",
 }
 CATEGORIES = tuple(CATEGORY_MODES)
-# Accepted last word of the file name, e.g. character-novice_female-front.png, weapon-dagger-stuff.png.
-NAME_SUFFIXES = ("front", "stuff")
+# Accepted last word of the file name, e.g. character-novice_female-front.png, weapon-dagger-stuff.png,
+# bigobject-kronenberg_main_gate-building.png.
+NAME_SUFFIXES = ("front", "stuff", "building")
 
 # Output naming and license data follow RagnarokChange docs/04-art-pipeline.md section 6.2.
 SOURCE_TAG = "hunyuan3d"
@@ -62,7 +65,8 @@ class Config:
     shape_flashvdm: bool = True
     shape_seed: int = 1234
     # Items keep the full octree resolution for detail and use fewer faces than characters.
-    presets: Dict[str, Dict[str, int]] = field(default_factory=lambda: {
+    # Optional per-category keys override the global settings: texture_size, render_size, min_component_ratio.
+    presets: Dict[str, Dict[str, float]] = field(default_factory=lambda: {
         "character": {"max_faces": 60000, "octree": 384},
         "monster": {"max_faces": 60000, "octree": 384},
         "armor": {"max_faces": 30000, "octree": 384},
@@ -71,6 +75,10 @@ class Config:
         "equipment": {"max_faces": 20000, "octree": 384},
         "prop": {"max_faces": 20000, "octree": 384},
         "environment": {"max_faces": 100000, "octree": 512},
+        "object": {"max_faces": 30000, "octree": 384},
+        # Large buildings: finest shape grid, many faces, 4K texture, and keep small decorative pieces.
+        "bigobject": {"max_faces": 200000, "octree": 512, "texture_size": 4096, "render_size": 2048,
+                      "min_component_ratio": 0.0002},
     })
     # Drop disconnected pieces smaller than this share of the largest piece (cloth fragments, specks).
     min_component_ratio: float = 0.002
@@ -108,6 +116,11 @@ class Config:
     @property
     def view_azimuths(self) -> List[int]:
         return [0, 45, 90, 180, 270, 315] if self.view_count == 6 else [0, 90, 180, 270]
+
+    def preset(self, category: str, key: str):
+        """Per-category value, falling back to the global setting of the same name."""
+        value = self.presets[category].get(key)
+        return getattr(self, key) if value is None else type(getattr(self, key))(value)
 
     def view_prompts(self, category: str) -> List[str]:
         prompt, negative = self.view_prompt, self.view_negative_prompt

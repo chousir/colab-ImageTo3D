@@ -72,7 +72,7 @@ def process(_, asset: Asset, config: Config) -> None:
         "size_m": [round(float(value), 3) for value in extents],
         "scaled_to_height_m": height,
         "faces": int(len(mesh.faces)),
-        "texture_size": config.texture_size,
+        "texture_size": int(mesh.visual.material.baseColorTexture.size[0]),
         "view_generator": {"model": config.view_base_model, "adapter": config.view_adapter_repo,
                            "adapter_commit": config.view_adapter_commit, "seed": config.view_seed,
                            "azimuth_deg": config.view_azimuths},

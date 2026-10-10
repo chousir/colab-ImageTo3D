@@ -31,8 +31,12 @@
    | `armor` | `armor-novice_helmet-stuff.png` | 只用這一張圖 → Hunyuan3D-2 單張圖模型 | 30,000 |
    | `appearance` | `appearance-hair_twin_tails-stuff.png` | 同上 | 40,000 |
    | `weapon` | `weapon-initiate_dagger-stuff.png` | 同上 | 20,000 |
+   | `object` | `object-street_lamp-building.png`、`object-stone_a-building.png` | 同上（小型場景物件） | 30,000 |
+   | `bigobject` | `bigobject-kronenberg_main_gate-building.png` | 同上，**最高精度**：形狀網格 512、4K 貼圖（渲染 2048）、保留細小的裝飾零件 | 200,000 |
 
-   `equipment`、`prop`、`environment` 也可以用，處理方式同 armor。結尾寫 `-front` 或 `-stuff` 都可以。形狀解析度（octree 384）所有類別一樣，物品只是面數較少。
+   `equipment`、`prop`、`environment` 也可以用，處理方式同 armor。結尾寫 `-front`、`-stuff` 或 `-building` 都可以。除了 bigobject（512），形狀解析度（octree）都是 384，物品只是面數較少。
+
+   **bigobject** 是 T4 能做到的最高設定，每棟可能要 15～30 分鐘。形狀網格 512 或 4K 貼圖放不下時，會自動改用 384 網格或 2048 貼圖重試，不會讓整批失敗。貼圖細節仍受限於貼圖模型每個視角 512 像素的生成解析度，近看大型建築時，細部材質建議在 Godot 疊加可重複的材質貼圖。
 3. 依序執行區塊 1～4。區塊 4 會處理 `in/` 裡所有未使用的正面圖；開著時繼續丟新圖也會接著做，閒置 `IDLE_STOP_MINUTES`（預設 30 分鐘）後自動停止。
 4. 完成的檔案在 `out/`；區塊 5 可以看四視角預覽、列出失敗的圖、打包下載。
 
