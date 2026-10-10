@@ -8,7 +8,7 @@ from . import assets as asset_store
 from .config import Config, load
 
 
-def run_stage(stage: str, load_model: Callable[[Config], object],
+def run_stage(stage: str, load_model: Callable[[Config, List[asset_store.Asset]], object],
               process: Callable[[object, asset_store.Asset, Config], None]) -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", required=True)
@@ -23,7 +23,7 @@ def run_stage(stage: str, load_model: Callable[[Config], object],
         return
 
     started = time.time()
-    model = load_model(config)
+    model = load_model(config, queue)
     runtime.release()
     runtime.report(f"{stage} model ready ({time.time() - started:.0f} s)")
     for asset in queue:

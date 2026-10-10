@@ -4,7 +4,21 @@ import os
 from dataclasses import asdict, dataclass, field
 from typing import Dict, List, Optional
 
-CATEGORIES = ("character", "monster", "equipment", "prop", "environment")
+# The first word of the file name picks the category. "multiview" categories get left/back/right views
+# generated from the front image; "single" categories are built from the one image only.
+CATEGORY_MODES = {
+    "character": "multiview",
+    "monster": "multiview",
+    "armor": "single",
+    "appearance": "single",
+    "weapon": "single",
+    "equipment": "single",
+    "prop": "single",
+    "environment": "single",
+}
+CATEGORIES = tuple(CATEGORY_MODES)
+# Accepted last word of the file name, e.g. character-novice_female-front.png, weapon-dagger-stuff.png.
+NAME_SUFFIXES = ("front", "stuff")
 
 # Output naming and license data follow RagnarokChange docs/04-art-pipeline.md section 6.2.
 SOURCE_TAG = "hunyuan3d"
@@ -36,21 +50,26 @@ class Config:
     view_prompt: str = ("same subject as the reference image, preserve its category, silhouette, colors and "
                         "distinctive details, orthographic multi-view turnaround, plain neutral background, no text")
     view_negative_prompt: str = "watermark, low quality, deformed, inconsistent design, extra objects, text"
-    # "bald": characters are generated without hair (hair and head are separate assets in RagnarokChange).
+    # "bald": characters (not monsters) are generated without hair; hair and head are separate assets.
     head_mode: str = "bald"
 
-    # Shape (Hunyuan3D-2mv).
+    # Shape: Hunyuan3D-2mv for multiview categories, Hunyuan3D-2 single-image model for the others.
     hunyuan_commit: str = "f8db63096c8282cb27354314d896feba5ba6ff8a"
     shape_model: str = "hunyuan3d-dit-v2-mv"
+    single_shape_model: str = "hunyuan3d-dit-v2-0"
     shape_steps: int = 50
     shape_guidance: float = 5.0
     shape_flashvdm: bool = True
     shape_seed: int = 1234
+    # Items keep the full octree resolution for detail and use fewer faces than characters.
     presets: Dict[str, Dict[str, int]] = field(default_factory=lambda: {
         "character": {"max_faces": 60000, "octree": 384},
-        "monster": {"max_faces": 40000, "octree": 384},
-        "equipment": {"max_faces": 15000, "octree": 384},
-        "prop": {"max_faces": 15000, "octree": 384},
+        "monster": {"max_faces": 60000, "octree": 384},
+        "armor": {"max_faces": 30000, "octree": 384},
+        "appearance": {"max_faces": 40000, "octree": 384},
+        "weapon": {"max_faces": 20000, "octree": 384},
+        "equipment": {"max_faces": 20000, "octree": 384},
+        "prop": {"max_faces": 20000, "octree": 384},
         "environment": {"max_faces": 100000, "octree": 512},
     })
     # Drop disconnected pieces smaller than this share of the largest piece (cloth fragments, specks).
@@ -65,9 +84,7 @@ class Config:
     # Export: real-world height in meters per category (RagnarokChange 04 section 3); None keeps the size.
     female_height_m: float = 1.65
     male_height_m: float = 1.78
-    category_height_m: Dict[str, Optional[float]] = field(default_factory=lambda: {
-        "monster": None, "equipment": None, "prop": None, "environment": None,
-    })
+    category_height_m: Dict[str, Optional[float]] = field(default_factory=dict)
     mark_used: bool = True
 
     # Batch runner.
@@ -92,9 +109,9 @@ class Config:
     def view_azimuths(self) -> List[int]:
         return [0, 45, 90, 180, 270, 315] if self.view_count == 6 else [0, 90, 180, 270]
 
-    def view_prompts(self) -> List[str]:
+    def view_prompts(self, category: str) -> List[str]:
         prompt, negative = self.view_prompt, self.view_negative_prompt
-        if self.head_mode == "bald":
+        if self.head_mode == "bald" and category == "character":
             prompt = f"{prompt}, {BALD_PROMPT}"
             negative = f"{negative}, {BALD_NEGATIVE}"
         return [prompt, negative]

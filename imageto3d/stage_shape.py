@@ -1,22 +1,27 @@
-"""Stage 2: build the mesh with Hunyuan3D-2mv from front/left/back, then clean it."""
+"""Stage 2: build the mesh (Hunyuan3D-2mv from front/left/back, or Hunyuan3D-2 from one image), then clean it."""
 from .assets import Asset
 from .config import Config
 from .stages import run_stage
 
 
-def load_model(config: Config):
+def load_model(config: Config, queue):
     import torch
     from hy3dgen.rembg import BackgroundRemover
     from hy3dgen.shapegen import Hunyuan3DDiTFlowMatchingPipeline
     from . import runtime
 
+    # The runner sends one mode per process, so only one shape model is ever loaded.
+    multiview = queue[0].mode == "multiview"
+    repo, subfolder = (("tencent/Hunyuan3D-2mv", config.shape_model) if multiview
+                       else ("tencent/Hunyuan3D-2", config.single_shape_model))
     # Upstream builds the model in fp32 on the CPU next to its 5 GB checkpoint, which exceeds free Colab RAM.
     with runtime.build_on_gpu_fp16():
         pipe = Hunyuan3DDiTFlowMatchingPipeline.from_pretrained(
-            "tencent/Hunyuan3D-2mv", subfolder=config.shape_model, variant="fp16", dtype=torch.float16)
-        if config.shape_flashvdm and "turbo" in config.shape_model:
+            repo, subfolder=subfolder, variant="fp16", dtype=torch.float16)
+        if config.shape_flashvdm and "turbo" in subfolder:
             pipe.enable_flashvdm()  # Official turbo setting: turbo VAE plus a faster decoder.
-    return {"pipe": pipe, "rembg": BackgroundRemover()}
+    print(f"  shape model: {repo}/{subfolder}", flush=True)
+    return {"pipe": pipe, "rembg": BackgroundRemover(), "turbo": "turbo" in subfolder}
 
 
 def prepare(model, path: str):
@@ -47,10 +52,13 @@ def process(model, asset: Asset, config: Config) -> None:
     from hy3dgen.shapegen import DegenerateFaceRemover, FaceReducer, FloaterRemover
 
     preset = config.presets[asset.category]
-    images = {view: prepare(model, asset.view_path(view)) for view in ("front", "left", "back")}
-    steps = 5 if "turbo" in config.shape_model else config.shape_steps
+    if asset.mode == "multiview":
+        image = {view: prepare(model, asset.view_path(view)) for view in ("front", "left", "back")}
+    else:
+        image = prepare(model, asset.view_path("front"))
+    steps = 5 if model["turbo"] else config.shape_steps
     mesh = model["pipe"](
-        image=images,
+        image=image,
         num_inference_steps=steps,
         guidance_scale=config.shape_guidance,
         octree_resolution=preset["octree"],

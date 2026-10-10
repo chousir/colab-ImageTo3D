@@ -46,18 +46,21 @@ def run_round(config_path: str, config: Config) -> int:
                  and all(not asset.needs(previous, config) for previous in STAGES[:STAGES.index(stage)])]
         if not queue:
             continue
-        keys = [asset.key for asset in queue]
-        print(f"\n=== {stage}: {', '.join(keys)}", flush=True)
-        code = _run_stage(stage, keys, config_path, config)
-        if code != 0:
-            print(f"[{stage}] process exited with code {code}"
-                  + (" (killed: out of memory or timeout)" if code < 0 else ""), flush=True)
-        # A crash leaves the asset that was running marked; charge the failure to it.
-        for asset in queue:
-            status = asset_store.read_status(asset)
-            if status.get("running") == stage:
-                asset_store.fail(asset, stage, f"process exited with code {code}")
-        worked.update(keys)
+        # Views and shape load different models per mode, so each mode gets its own process.
+        groups = ([[asset for asset in queue if asset.mode == mode] for mode in ("multiview", "single")]
+                  if stage in ("views", "shape") else [queue])
+        for group in filter(None, groups):
+            keys = [asset.key for asset in group]
+            print(f"\n=== {stage}: {', '.join(keys)}", flush=True)
+            code = _run_stage(stage, keys, config_path, config)
+            if code != 0:
+                print(f"[{stage}] process exited with code {code}"
+                      + (" (killed: out of memory or timeout)" if code < 0 else ""), flush=True)
+            # A crash leaves the asset that was running marked; charge the failure to it.
+            for asset in group:
+                if asset_store.read_status(asset).get("running") == stage:
+                    asset_store.fail(asset, stage, f"process exited with code {code}")
+            worked.update(keys)
     for asset in asset_store.pending(config):
         if asset_store.blocked(asset, config):
             print(f"SKIPPED {asset.key}: failed {config.max_failures} times "

@@ -1,4 +1,4 @@
-"""Stage 1: cut out the front image and generate left/back/right views with MV-Adapter SDXL."""
+"""Stage 1: cut out the front image; for multiview categories also generate left/back/right with MV-Adapter."""
 import os
 
 from .assets import Asset
@@ -6,12 +6,19 @@ from .config import Config
 from .stages import run_stage
 
 
-def load_model(config: Config):
+def load_model(config: Config, queue):
+    from hy3dgen.rembg import BackgroundRemover
+    model = {"rembg": BackgroundRemover(), "pipe": None}
+    if any(asset.mode == "multiview" for asset in queue):
+        model["pipe"] = load_multiview(config)
+    return model
+
+
+def load_multiview(config: Config):
     import torch
     from diffusers import AutoencoderKL
     from mvadapter.pipelines.pipeline_mvadapter_i2mv_sdxl import MVAdapterI2MVSDXLPipeline
     from mvadapter.schedulers.scheduling_shift_snr import ShiftSNRScheduler
-    from hy3dgen.rembg import BackgroundRemover
     from . import runtime
 
     # Free Colab has 12.7 GB RAM and T4 has 15 GB VRAM: load SDXL in fp16, move only the UNet to the GPU,
@@ -34,7 +41,7 @@ def load_model(config: Config):
     pipe.to(device="cuda", dtype=torch.float16)
     pipe.cond_encoder.to(device="cuda", dtype=torch.float16)
     pipe.enable_vae_slicing()
-    return {"pipe": pipe, "rembg": BackgroundRemover()}
+    return pipe
 
 
 def cutout(model, path: str):
@@ -57,11 +64,14 @@ def save_sheet(images, path: str, size: int = 384) -> None:
 
 
 def process(model, asset: Asset, config: Config) -> None:
-    from scripts.inference_i2mv_sdxl import run_pipeline
-
     os.makedirs(asset.work, exist_ok=True)
     reference = cutout(model, asset.source)
-    prompt, negative = config.view_prompts()
+    if asset.mode == "single":
+        reference.save(asset.view_path("front"))
+        save_sheet([reference], asset.views_sheet)
+        return
+    from scripts.inference_i2mv_sdxl import run_pipeline
+    prompt, negative = config.view_prompts(asset.category)
     azimuths = config.view_azimuths
     generated, _ = run_pipeline(
         model["pipe"],

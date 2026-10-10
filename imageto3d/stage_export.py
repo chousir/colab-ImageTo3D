@@ -41,7 +41,7 @@ def pbr_material(mesh):
     return mesh
 
 
-def load_model(config: Config):
+def load_model(config: Config, queue):
     return None
 
 

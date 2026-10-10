@@ -6,7 +6,7 @@ import time
 from dataclasses import dataclass
 from typing import Dict, List, Optional
 
-from .config import CATEGORIES, SOURCE_TAG, Config
+from .config import CATEGORIES, CATEGORY_MODES, NAME_SUFFIXES, SOURCE_TAG, Config
 
 IMAGE_EXTENSIONS = (".png", ".jpg", ".jpeg", ".webp")
 VIEW_NAMES = ("front", "left", "back", "right")
@@ -23,6 +23,14 @@ class Asset:
     @property
     def key(self) -> str:
         return f"{self.category}-{self.asset_id}"
+
+    @property
+    def mode(self) -> str:
+        return CATEGORY_MODES[self.category]
+
+    @property
+    def views(self) -> tuple:
+        return VIEW_NAMES if self.mode == "multiview" else ("front",)
 
     @property
     def output_name(self) -> str:
@@ -49,9 +57,9 @@ class Asset:
     def needs(self, stage: str, config: Config) -> bool:
         """True when the stage output is missing or older than its input."""
         if stage == "views":
-            return _stale([self.view_path(view) for view in VIEW_NAMES], [self.source])
+            return _stale([self.view_path(view) for view in self.views], [self.source])
         if stage == "shape":
-            return _stale([self.shape_path], [self.view_path(view) for view in VIEW_NAMES])
+            return _stale([self.shape_path], [self.view_path(view) for view in self.views])
         if stage == "paint":
             return _stale([self.textured_path], [self.shape_path])
         if stage == "export":
@@ -67,15 +75,14 @@ def _stale(outputs: List[str], inputs: List[str]) -> bool:
 
 
 def parse_name(path: str) -> Optional[Dict[str, str]]:
+    """<category>-<id>-<front|stuff>.<ext>; the first word picks the category settings."""
     stem = os.path.splitext(os.path.basename(path))[0].lower()
-    if stem.startswith("used-") or not stem.endswith("-front"):
+    if stem.startswith("used-"):
         return None
-    for category in CATEGORIES:
-        prefix = category + "-"
-        if stem.startswith(prefix):
-            asset_id = stem[len(prefix):-len("-front")]
-            if asset_id:
-                return {"category": category, "asset_id": asset_id}
+    category, _, rest = stem.partition("-")
+    asset_id, _, suffix = rest.rpartition("-")
+    if category in CATEGORIES and suffix in NAME_SUFFIXES and asset_id:
+        return {"category": category, "asset_id": asset_id}
     return None
 
 

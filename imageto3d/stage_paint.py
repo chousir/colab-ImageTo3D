@@ -4,7 +4,7 @@ from .config import Config
 from .stages import run_stage
 
 
-def load_model(config: Config):
+def load_model(config: Config, queue):
     from hy3dgen.texgen import Hunyuan3DPaintPipeline
     from . import runtime
 

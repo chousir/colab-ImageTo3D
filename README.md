@@ -22,7 +22,17 @@
 ## 使用方式
 
 1. 在 Colab 開啟 Notebook，「執行階段 → 變更執行階段類型」：T4 GPU，執行階段版本 `2026.07`。
-2. 把正面圖放進 `MyDrive/RagnarokChange/hunyuan3d/in/`，檔名 `<類別>-<id>-front.png`（類別：`character`、`monster`、`equipment`、`prop`、`environment`；id 用英文小寫、數字、底線），例如 `character-novice_female-front.png`。
+2. 把圖放進 `MyDrive/RagnarokChange/hunyuan3d/in/`。檔名是 `<類別>-<id>-<front|stuff>.png`，id 用英文小寫、數字、底線；**第一個字決定生成方式**：
+
+   | 類別 | 例子 | 生成方式 | 面數上限 |
+   |---|---|---|---|
+   | `character` | `character-novice_female-front.png` | 正面圖補出左、背、右視角 → Hunyuan3D-2mv；光頭模式；縮放到身高 1.65 m | 60,000 |
+   | `monster` | `monster-gelly-front.png` | 跟 character 相同（但不加光頭提示詞、不縮放） | 60,000 |
+   | `armor` | `armor-novice_helmet-stuff.png` | 只用這一張圖 → Hunyuan3D-2 單張圖模型 | 30,000 |
+   | `appearance` | `appearance-hair_twin_tails-stuff.png` | 同上 | 40,000 |
+   | `weapon` | `weapon-initiate_dagger-stuff.png` | 同上 | 20,000 |
+
+   `equipment`、`prop`、`environment` 也可以用，處理方式同 armor。結尾寫 `-front` 或 `-stuff` 都可以。形狀解析度（octree 384）所有類別一樣，物品只是面數較少。
 3. 依序執行區塊 1～4。區塊 4 會處理 `in/` 裡所有未使用的正面圖；開著時繼續丟新圖也會接著做，閒置 `IDLE_STOP_MINUTES`（預設 30 分鐘）後自動停止。
 4. 完成的檔案在 `out/`；區塊 5 可以看四視角預覽、列出失敗的圖、打包下載。
 
@@ -30,27 +40,27 @@
 
 ### 正面圖怎麼準備（光頭模式）
 
-RagnarokChange 的頭部和頭髮是另外的素材（04-D11），身體做成光頭最容易接上。區塊 2 的 `HEAD_MODE` 預設 `bald`，生成視角時會要求光頭。**正面圖本身也是光頭時效果最好**，否則背面的頭髮可能時有時無。用 Gemini 生成正面圖時可以加上：
+RagnarokChange 的頭部和頭髮是另外的素材（04-D11），角色身體做成光頭最容易接上（怪物不受影響）。區塊 2 的 `HEAD_MODE` 預設 `bald`，生成視角時會要求光頭。**正面圖本身也是光頭時效果最好**，否則背面的頭髮可能時有時無。用 Gemini 生成正面圖時可以加上：
 
 ```text
 same character and outfit, completely bald head with no hair, no helmet, no backpack, no weapons,
 full body front view, A-pose, plain white background
 ```
 
-背包、頭飾、武器另外做成單獨的素材，不要畫在角色身上。透明背景的 PNG 最好；不透明的圖會自動去背。
+背包、頭飾、武器另外做成單獨的素材（armor／weapon），不要畫在角色身上。透明背景的 PNG 最好；不透明的圖會自動去背。單張圖的物品會把圖裡看得到的東西都建出來，例如髮型圖裡的假人頭也會變成模型的一部分，所以髮型圖最好只有頭髮。
 
 ## 流程與記憶體
 
 ```text
-in/<類別>-<id>-front.png
-  │ 1. views   去背 → MV-Adapter SDXL 生成左、背、右視角（光頭模式加提示詞）
-  │ 2. shape   Hunyuan3D-2mv 用正、左、背建形狀 → 移除碎片 → 減面
+in/<類別>-<id>-<front|stuff>.png
+  │ 1. views   去背；character／monster 再用 MV-Adapter SDXL 生成左、背、右視角
+  │ 2. shape   character／monster：Hunyuan3D-2mv 用正、左、背；其他：Hunyuan3D-2 只用正面 → 移除碎片 → 減面
   │ 3. paint   Hunyuan3D-2 依正面圖上貼圖
   │ 4. export  縮放到真實尺寸、腳踩地面、PBR 材質 → out/，正面圖改名 used-…
 out/hunyuan3d-<類別>-<id>.glb / .json / -views.jpg
 ```
 
-- **每個階段是獨立的 Python 程序**：一次載入一個模型、處理完所有排隊的圖後結束，結束時 RAM 和 GPU 記憶體全部還給系統，所以連續跑很多張也不會累積到耗盡。
+- **每個階段是獨立的 Python 程序**：一次載入一個模型、處理完所有排隊的圖後結束，結束時 RAM 和 GPU 記憶體全部還給系統，所以連續跑很多張也不會累積到耗盡。多視角和單張圖要用不同的形狀模型，所以這兩組各自用一個程序。
 - **各模型都改成省記憶體的載入方式**：SDXL 以 fp16 載入、adapter 與形狀模型直接在 GPU 上以 fp16 建立、貼圖模型的權重用 mmap 按需讀取，避免免費版 12.7 GB 系統 RAM 爆掉。
 - **失敗隔離**：某張圖出錯（包括記憶體不足被系統終止）只記在那張圖上，下一輪再試一次，連續失敗兩次就跳過，其他圖照常處理。錯誤記在 `work/<類別>-<id>/status.json`。
 - **可以中斷**：中間檔存在 Drive 的 `work/`，斷線後重跑區塊 1～4，會從中斷的階段接著做。
@@ -63,7 +73,7 @@ out/hunyuan3d-<類別>-<id>.glb / .json / -views.jpg
 | `hunyuan3d-<類別>-<id>.json` | 授權代碼、來源圖、尺寸、面數、所有模型與種子，可用來填 `assets/license_registry.json` |
 | `hunyuan3d-<類別>-<id>-views.jpg` | 正、左、背、右四視角預覽 |
 
-檔名照 RagnarokChange `docs/04-art-pipeline.md` 第 6.2 節的 `<來源>-<類別>-<名稱>`，可以直接丟進它的 `assets/_inbox/`。法線、ORM 貼圖、LOD、綁骨由 RagnarokChange 的 Blender 管線與 Mixamo 處理。
+檔名照 RagnarokChange `docs/04-art-pipeline.md` 第 6.2 節的 `<來源>-<類別>-<名稱>` 格式，類別沿用你的檔名用字（armor、weapon 對應那邊的 equipment，appearance 對應 characters 的髮型）。物品類保留生成時的尺寸（約 2 單位高），實際尺寸由那邊的 Blender 管線依概念圖標示縮放。法線、ORM 貼圖、LOD、綁骨由 RagnarokChange 的 Blender 管線與 Mixamo 處理。
 
 **授權**：JSON 裡的授權代碼是 `LicenseRef-Tencent-Hunyuan3D-Community`。Hunyuan3D 不在 RagnarokChange 04-D03 的白名單上，使用前要在那邊的文件決定是否加入。
 
@@ -74,7 +84,7 @@ Google Drive / MyDrive / RagnarokChange / hunyuan3d /
 ├── in/            # 放正面圖；完成後改名為 used-…
 ├── out/           # 完成的 GLB、JSON、四視角預覽
 ├── work/          # 每張圖的中間檔：front.png、left/back/right.jpg、shape.glb、textured.glb、status.json
-├── hf_cache/      # Hugging Face 模型權重（約 32 GB，只下載一次）
+├── hf_cache/      # Hugging Face 模型權重（約 42 GB，只下載一次）
 ├── rembg_cache/   # 去背模型
 └── wheels/        # 編譯好的 CUDA 擴充（依 Python/torch/GPU 分資料夾）
 ```
@@ -85,10 +95,11 @@ Google Drive / MyDrive / RagnarokChange / hunyuan3d /
 
 | 設定 | 預設 | 說明 |
 |---|---|---|
-| `HEAD_MODE` | `bald` | `bald` 生成光頭；`keep` 照正面圖 |
+| `HEAD_MODE` | `bald` | 只影響 character：`bald` 生成光頭；`keep` 照正面圖 |
 | `VIEW_COUNT` | 4 | 4 視角較省顯存；6 是 MV-Adapter 官方設定，約需 14 GB VRAM |
 | `VIEW_SEED` | 1234 | 視角不理想時換一個數字 |
-| `SHAPE_MODEL` | 完整版 | 完整版細節較好（T4 每個形狀約 3 分鐘）；turbo 約 30 秒 |
+| `SHAPE_MODEL` | 完整版 | character／monster 的形狀模型。完整版細節較好（T4 每個形狀約 3 分鐘）；turbo 約 30 秒 |
+| `SINGLE_SHAPE_MODEL` | 完整版 | armor／appearance／weapon 的形狀模型（Hunyuan3D-2 單張圖） |
 | `PAINT_MODEL` | 完整版 | turbo 較快 |
 | `TEXTURE_SIZE` | 2048 | 顯存不足時改 1024 |
 | `WATCH`、`POLL_MINUTES`、`IDLE_STOP_MINUTES` | 開、2、30 | 持續監看 `in/` 的頻率與閒置多久停止 |
