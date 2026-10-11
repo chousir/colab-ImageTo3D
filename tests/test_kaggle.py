@@ -150,3 +150,14 @@ archive = kaggle_io.zip_outputs(cfg.out_dir, root)
 import zipfile
 assert "hunyuan3d-weapon-a.glb" in zipfile.ZipFile(archive).namelist()
 print("ALL OK (manual mode)")
+
+# Packing for upload: files move into one zip (root emptied) and keep their relative paths.
+pack_root = os.path.join(root, "pack", "models"); os.makedirs(os.path.join(pack_root, "tencent", "x"))
+open(os.path.join(pack_root, "tencent", "x", "a.bin"), "wb").write(b"1" * 1000)
+open(os.path.join(pack_root, models.MANIFEST), "w").write("{}")
+archive = models.pack(pack_root, os.path.join(root, "pack", "upload"))
+assert not os.path.exists(pack_root)
+assert sorted(zipfile.ZipFile(archive).namelist()) == [models.MANIFEST, "tencent/x/a.bin"]
+assert models.pack(pack_root, os.path.join(root, "pack", "upload")) == archive  # rerun keeps the archive
+assert len(zipfile.ZipFile(archive).namelist()) == 2
+print("ALL OK (pack)")

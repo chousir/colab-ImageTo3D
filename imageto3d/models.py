@@ -86,3 +86,31 @@ def find_root(search_dir: str = "/kaggle/input", max_depth: int = 4) -> Optional
         if root.count(os.sep) - base_depth >= max_depth:
             dirs[:] = []
     return None
+
+
+ARCHIVE = "imageto3d-models.zip"
+
+
+def pack(root: str, archive_dir: str) -> str:
+    """Move every file under root into one uncompressed zip, deleting each file once it is in the archive.
+
+    kagglehub zips folders of more than 50 files into a temporary copy before uploading, which needs twice
+    the model size on a 57 GB Kaggle disk. Packing ourselves keeps the peak at the model size plus one file.
+    Kaggle extracts the archive, so the dataset keeps the folder layout.
+    """
+    import zipfile
+    os.makedirs(archive_dir, exist_ok=True)
+    archive = os.path.join(archive_dir, ARCHIVE)
+    paths = sorted(os.path.join(folder, name) for folder, _, names in os.walk(root) for name in names)
+    # Append mode: an interrupted run continues where it stopped (files already packed are gone from root).
+    with zipfile.ZipFile(archive, "a", compression=zipfile.ZIP_STORED, allowZip64=True) as bundle:
+        packed = set(bundle.namelist())
+        for path in paths:
+            name = os.path.relpath(path, root)
+            if name not in packed:
+                bundle.write(path, name)
+                bundle.fp.flush()
+            os.remove(path)
+    shutil.rmtree(root, ignore_errors=True)
+    print(f"Packed {len(paths)} files into {archive} ({os.path.getsize(archive) / 1024**3:.1f} GB)", flush=True)
+    return archive
