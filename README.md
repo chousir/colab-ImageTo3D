@@ -111,7 +111,7 @@ rclone config file                            # 顯示 rclone.conf 的位置
 
 1. Kaggle → Create → **Import Notebook**，匯入 [`kaggle_prepare_models.ipynb`](kaggle_prepare_models.ipynb)。
 2. Session options：Accelerator **None**、Internet **on**；Secrets 勾選 `KAGGLE_API_TOKEN`（或 `KAGGLE_KEY`）、`HF_TOKEN`。
-3. 在區塊 1 填 `KAGGLE_USERNAME`，然後 Run All（或 Save & Run All 在背景跑）。不含 turbo 約 25～35 GB；Kaggle 機房連 Hugging Face 通常很快，每個 repo 的速度會印出來。
+3. Run All（或 Save & Run All 在背景跑）。不含 turbo 約 25～35 GB；Kaggle 機房連 Hugging Face 通常很快，每個 repo 的速度會印出來。
 4. 完成後打開印出的 Dataset 網址，確認是 **Private**，檔案裡看得到 `tencent/Hunyuan3D-2`、`imageto3d-models.json` 等。
 
 這個 notebook 下載的內容等同於下面的指令（`huggingface_hub` 0.36 的 `hf` 指令），只下載流程用得到的檔案，同時下載去背模型 `rembg/u2net.onnx`：
