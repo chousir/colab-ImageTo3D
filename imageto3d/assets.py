@@ -6,11 +6,11 @@ import time
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 
-from .config import CATEGORIES, CATEGORY_MODES, EXTRA_VIEWS, NAME_SUFFIXES, SOURCE_TAG, Config
+from .config import CATEGORIES, CATEGORY_MODES, EXTRA_VIEWS, NAME_SUFFIXES, REQUIRED_VIEWS, SOURCE_TAG, Config
 
 IMAGE_EXTENSIONS = (".png", ".jpg", ".jpeg", ".webp")
 VIEW_NAMES = ("front", "left", "back", "right")
-_warned_duplicates = set()
+_warned = set()
 
 
 @dataclass
@@ -99,9 +99,18 @@ def parse_name(path: str) -> Optional[Dict[str, str]]:
         return None
     category, _, rest = stem.partition("-")
     asset_id, _, suffix = rest.rpartition("-")
+    if category in REQUIRED_VIEWS and suffix != "front" and suffix in NAME_SUFFIXES and asset_id:
+        _warn_once(path, f"WARNING: {os.path.basename(path)} ignored; {category} main image must end in -front")
+        return None
     if category in CATEGORIES and suffix in NAME_SUFFIXES and asset_id:
         return {"category": category, "asset_id": asset_id}
     return None
+
+
+def _warn_once(token: str, message: str) -> None:
+    if token not in _warned:
+        _warned.add(token)
+        print(message, flush=True)
 
 
 def parse_extra_view(path: str) -> Optional[Dict[str, str]]:
@@ -127,16 +136,23 @@ def pending(config: Config) -> List[Asset]:
             continue
         key = f"{parsed['category']}-{parsed['asset_id']}"
         if key in assets:
-            if path not in _warned_duplicates:
-                _warned_duplicates.add(path)
-                print(f"WARNING: duplicate front image for {key}; ignoring {os.path.basename(path)}", flush=True)
+            _warn_once(path, f"WARNING: duplicate front image for {key}; ignoring {os.path.basename(path)}")
             continue
         assets[key] = Asset(parsed["category"], parsed["asset_id"], path, os.path.join(config.work_dir, key))
     for path in paths:
         extra = parse_extra_view(path)
         if extra and extra["key"] in assets:
             assets[extra["key"]].supplied[extra["view"]] = path
-    return list(assets.values())
+    ready = []
+    for asset in assets.values():
+        missing = [view for view in REQUIRED_VIEWS.get(asset.category, ()) if view not in asset.supplied]
+        if missing:
+            _warn_once(f"{asset.key}:{','.join(missing)}",
+                       f"WAITING {asset.key}: missing " + ", ".join(f"{asset.key}-{view}" for view in missing)
+                       + " (skipped until all four views are in Drive/in)")
+            continue
+        ready.append(asset)
+    return ready
 
 
 def find(config: Config, keys: List[str]) -> List[Asset]:
