@@ -78,11 +78,12 @@ def process(model, asset: Asset, config: Config) -> None:
         print(f"  {name}: supplied {os.path.basename(path)}", flush=True)
     if asset.generated_views:
         views.update(generate(model, asset, config, reference))
-    for name in ("left", "back", "right"):
-        views[name].save(asset.view_path(name), quality=95)
+    for name, image in views.items():
+        image.save(asset.view_path(name), quality=95)
     # Write the front last: its timestamp marks the view set as complete.
     reference.save(asset.view_path("front"))
-    save_sheet([reference, views["left"], views["back"], views["right"]], asset.views_sheet)
+    save_sheet([reference] + [views[name] for name in ("left", "back", "right") if name in views],
+               asset.views_sheet)
 
 
 def generate(model, asset: Asset, config: Config, reference):

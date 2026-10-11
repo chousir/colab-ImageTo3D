@@ -11,6 +11,8 @@ def img(name):
     Image.new("RGB", (8, 8)).save(os.path.join(cfg.input_dir, name)); time.sleep(0.01)
 img("character-novice_female-front.jpg")
 img("monster-gelly-front.png")
+img("monster-gelly-back.png")
+img("monster-bunny-front.png")                # no back yet: waits
 img("used-character-old-front.jpg")
 img("sword-dagger-front.jpg")           # unknown category
 img("character-novice_female-back.jpg") # supplied back view for the character
@@ -20,7 +22,7 @@ img("appearance-hair_twin_tails-stuff.jpg")
 img("armor-novice_helmet-front.png")     # front suffix also accepted
 img("bigobject-kronenberg_main_gate-front.png")
 img("bigobject-old_tower-building.png")         # wrong main suffix for bigobject: ignored
-img("bigobject-church-front.png")               # incomplete: waits for left/back/right
+img("bigobject-church-front.png")               # incomplete: waits for back
 img("object-street_lamp-building.png")
 img("bigobject-kronenberg_main_gate-back.png")   # supplied view
 img("bigobject-kronenberg_main_gate-right.png")  # supplied view
@@ -40,7 +42,8 @@ assert sorted(gate.supplied) == ["back", "left", "right"] and gate.generated_vie
 assert not any(a.asset_id in ("church", "old_tower") for a in pend)
 assert gate.shape_views == ["front", "left", "back", "right"]
 assert pend[0].shape_views == ["front", "left", "back"] and pend[0].generated_views == ["left", "right"]
-assert pend[1].generated_views == ["left", "back", "right"]
+assert pend[1].key == "monster-gelly" and pend[1].generated_views == [] and pend[1].shape_views == ["front", "back"]
+assert gate.shape_views == ["front", "left", "back", "right"] and not any(a.key == "monster-bunny" for a in pend)
 assert cfg.preset("bigobject", "texture_size") == 4096 and cfg.preset("weapon", "texture_size") == 2048
 assert cfg.preset("bigobject", "min_component_ratio") == 0.0002 and cfg.preset("object", "render_size") == 1024
 assert "bald" in cfg.view_prompts("character")[0] and "bald" not in cfg.view_prompts("monster")[0]
@@ -103,8 +106,8 @@ assert n == 0
 import trimesh
 m = trimesh.load(os.path.join(cfg.out_dir, "hunyuan3d-character-novice_female.glb"), force="mesh")
 print("bounds", m.bounds.round(3).tolist(), type(m.visual.material).__name__, m.visual.material.baseColorTexture.size)
-# The incomplete building starts once its last view arrives.
-for view in ("left", "back", "right"):
-    img(f"bigobject-church-{view}.png")
-assert "bigobject-church" in [a.key for a in assets.pending(cfg)]
+# Incomplete assets start once their back view arrives; front + back is enough.
+img("bigobject-church-back.png"); img("monster-bunny-back.png")
+ready = {a.key: a for a in assets.pending(cfg)}
+assert ready["bigobject-church"].shape_views == ["front", "back"] and "monster-bunny" in ready
 print("ALL OK")

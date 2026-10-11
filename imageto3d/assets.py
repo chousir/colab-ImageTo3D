@@ -31,20 +31,30 @@ class Asset:
         return CATEGORY_MODES[self.category]
 
     @property
-    def views(self) -> tuple:
-        return VIEW_NAMES if self.mode == "multiview" else ("front",)
+    def generates_views(self) -> bool:
+        """Only multiview categories without required views (character) fill gaps with MV-Adapter."""
+        return self.mode == "multiview" and self.category not in REQUIRED_VIEWS
 
     @property
     def generated_views(self) -> List[str]:
         """Views MV-Adapter must generate because the user did not supply them."""
-        return [view for view in EXTRA_VIEWS if self.mode == "multiview" and view not in self.supplied]
+        return [view for view in EXTRA_VIEWS if self.generates_views and view not in self.supplied]
+
+    @property
+    def views(self) -> tuple:
+        """Every view image this asset has in its work folder: front, supplied and generated views."""
+        return tuple(view for view in VIEW_NAMES
+                     if view == "front" or view in self.supplied or view in self.generated_views)
 
     @property
     def shape_views(self) -> List[str]:
-        """Front, left and back as in the official examples, plus right when it is a real supplied view."""
+        """Views fed to the shape model. Generated sets use front, left and back as in the official
+        examples (a generated right is only for review); supplied views are always used."""
         if self.mode == "single":
             return ["front"]
-        return ["front", "left", "back"] + (["right"] if "right" in self.supplied else [])
+        if self.generates_views:
+            return ["front", "left", "back"] + (["right"] if "right" in self.supplied else [])
+        return [view for view in VIEW_NAMES if view == "front" or view in self.supplied]
 
     @property
     def sources(self) -> List[str]:
@@ -149,7 +159,7 @@ def pending(config: Config) -> List[Asset]:
         if missing:
             _warn_once(f"{asset.key}:{','.join(missing)}",
                        f"WAITING {asset.key}: missing " + ", ".join(f"{asset.key}-{view}" for view in missing)
-                       + " (skipped until all four views are in Drive/in)")
+                       + " (skipped until the required views are in Drive/in)")
             continue
         ready.append(asset)
     return ready

@@ -1,4 +1,4 @@
-"""Stage 2: build the mesh (Hunyuan3D-2mv from front/left/back, or Hunyuan3D-2 from one image), then clean it."""
+"""Stage 2: build the mesh (Hunyuan3D-2mv from several views, or Hunyuan3D-2 from one image), then clean it."""
 from .assets import Asset
 from .config import Config
 from .stages import run_stage

@@ -16,7 +16,7 @@ CATEGORY_MODES = {
     "prop": "single",
     "environment": "single",
     "object": "single",
-    # Large buildings: built only from four supplied views (see REQUIRED_VIEWS).
+    # Large buildings: built only from supplied views (see REQUIRED_VIEWS).
     "bigobject": "multiview",
 }
 CATEGORIES = tuple(CATEGORY_MODES)
@@ -26,9 +26,10 @@ NAME_SUFFIXES = ("front", "stuff", "building")
 # Optional extra photos/renders for multiview categories: <category>-<id>-left|back|right.<ext>.
 # A supplied view replaces the generated one.
 EXTRA_VIEWS = ("left", "back", "right")
-# Categories that never generate views: the main image must end in -front and every listed view must be
-# supplied, otherwise the asset waits (it is skipped until the missing images arrive).
-REQUIRED_VIEWS = {"bigobject": ("left", "back", "right")}
+# Multiview categories that never generate views: the main image must end in -front and every listed view
+# must be supplied, otherwise the asset waits (skipped until the missing images arrive). Supplied -left and
+# -right images are optional extras. Multiview categories not listed here (character) generate missing views.
+REQUIRED_VIEWS = {"bigobject": ("back",), "monster": ("back",)}
 
 # Output naming and license data follow RagnarokChange docs/04-art-pipeline.md section 6.2.
 SOURCE_TAG = "hunyuan3d"

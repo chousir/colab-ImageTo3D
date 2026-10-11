@@ -27,27 +27,25 @@
    | 類別 | 例子 | 生成方式 | 面數上限 |
    |---|---|---|---|
    | `character` | `character-novice_female-front.png` | 正面圖補出左、背、右視角 → Hunyuan3D-2mv；光頭模式；縮放到身高 1.65 m | 60,000 |
-   | `monster` | `monster-gelly-front.png` | 跟 character 相同（但不加光頭提示詞、不縮放） | 60,000 |
+   | `monster` | `monster-gelly-front.png` ＋ `monster-gelly-back.png` | **正面、背面兩張都由你提供**（不生成視角）→ Hunyuan3D-2mv；不加光頭提示詞、不縮放 | 60,000 |
    | `armor` | `armor-novice_helmet-stuff.png` | 只用這一張圖 → Hunyuan3D-2 單張圖模型 | 30,000 |
    | `appearance` | `appearance-hair_twin_tails-stuff.png` | 同上 | 40,000 |
    | `weapon` | `weapon-initiate_dagger-stuff.png` | 同上 | 20,000 |
    | `object` | `object-street_lamp-building.png`、`object-stone_a-building.png` | 同上（小型場景物件） | 30,000 |
-   | `bigobject` | `bigobject-kronenberg_main_gate-front.png` ＋ `-back`、`-left`、`-right` | **必須四張圖都由你提供**（不生成視角），四張都用來建形狀；**最高精度**：形狀網格 512、4K 貼圖（渲染 2048）、保留細小的裝飾零件 | 200,000 |
+   | `bigobject` | `bigobject-kronenberg_main_gate-front.png` ＋ `-back` | **正面、背面兩張都由你提供**（不生成視角）；**最高精度**：形狀網格 512、4K 貼圖（渲染 2048）、保留細小的裝飾零件 | 200,000 |
 
    `equipment`、`prop`、`environment` 也可以用，處理方式同 armor。結尾寫 `-front`、`-stuff` 或 `-building` 都可以。除了 bigobject（512），形狀解析度（octree）都是 384，物品只是面數較少。
 
-   **bigobject 一定要四張圖**，主圖結尾是 `-front`（不是 `-building`）：
+   **monster、bigobject 一定要正面和背面兩張**，主圖結尾是 `-front`（bigobject 不能用 `-building`）：
 
    ```text
-   bigobject-kronenberg_main_gate-front.png
-   bigobject-kronenberg_main_gate-back.png
-   bigobject-kronenberg_main_gate-left.png
-   bigobject-kronenberg_main_gate-right.png
+   monster-gelly-front.png                       bigobject-kronenberg_main_gate-front.png
+   monster-gelly-back.png                        bigobject-kronenberg_main_gate-back.png
    ```
 
-   四張缺任何一張，區塊 4 會顯示 `WAITING … missing …` 並跳過，等補齊後（監看模式下會自動）再處理。四張都會在完成後改名為 `used-…`。
+   缺背面時，區塊 4 會顯示 `WAITING … missing …-back` 並跳過，補上後（監看模式下會自動）再處理。兩類都不會用 AI 生成視角，側面由形狀模型推測；如果你另外放了 `-left`、`-right`，也會一起拿來建形狀（選用）。完成後所有用到的圖都改名為 `used-…`。
 
-   **character、monster 的額外圖（選用）**：可以另外放同 id 的 `-left`、`-back`、`-right` 圖，例如 `character-novice_female-back.png`。有放的角度直接採用，沒放的才用 MV-Adapter 生成；提供的 right 也會一起拿來建形狀（生成的 right 只供檢視）。方向規則：**left 圖裡主體的正面朝向畫面左邊，right 圖朝向右邊**（left 是面對正面時往你的右手邊繞 90 度看到的樣子，跟 Hunyuan3D-2mv 範例一致）。用 Gemini 生成時，可以要求「same building, viewed from directly behind / from its left side, same lighting, plain background」。完成後這些額外圖也會改名為 `used-…`。
+   **character 的額外圖（選用）**：可以另外放同 id 的 `-left`、`-back`、`-right` 圖，例如 `character-novice_female-back.png`。有放的角度直接採用，沒放的才用 MV-Adapter 生成；提供的 right 也會一起拿來建形狀（生成的 right 只供檢視）。方向規則：**left 圖裡主體的正面朝向畫面左邊，right 圖朝向右邊**（left 是面對正面時往你的右手邊繞 90 度看到的樣子，跟 Hunyuan3D-2mv 範例一致）。用 Gemini 生成時，可以要求「same building, viewed from directly behind / from its left side, same lighting, plain background」。完成後這些額外圖也會改名為 `used-…`。
 
    **bigobject** 是 T4 能做到的最高設定，每棟可能要 15～30 分鐘。形狀網格 512 或 4K 貼圖放不下時，會自動改用 384 網格或 2048 貼圖重試，不會讓整批失敗。貼圖細節仍受限於貼圖模型每個視角 512 像素的生成解析度，近看大型建築時，細部材質建議在 Godot 疊加可重複的材質貼圖。
 3. 依序執行區塊 1～4。區塊 4 會處理 `in/` 裡所有未使用的正面圖；開著時繼續丟新圖也會接著做，閒置 `IDLE_STOP_MINUTES`（預設 30 分鐘）後自動停止。
@@ -70,7 +68,7 @@ full body front view, A-pose, plain white background
 
 ```text
 in/<類別>-<id>-<front|stuff>.png
-  │ 1. views   去背；bigobject 用你提供的四張圖；character／monster 採用你提供的額外視角，缺的再用 MV-Adapter SDXL 生成
+  │ 1. views   去背；monster／bigobject 只用你提供的圖（正面＋背面，可加左右）；character 缺的視角用 MV-Adapter SDXL 生成
   │ 2. shape   多視角類別：Hunyuan3D-2mv 用正、左、背（有提供 right 時加上 right）；其他：Hunyuan3D-2 只用正面 → 移除碎片 → 減面
   │ 3. paint   Hunyuan3D-2 依正面圖上貼圖
   │ 4. export  縮放到真實尺寸、腳踩地面、PBR 材質 → out/，正面圖改名 used-…
@@ -115,7 +113,7 @@ Google Drive / MyDrive / RagnarokChange / hunyuan3d /
 | `HEAD_MODE` | `bald` | 只影響 character：`bald` 生成光頭；`keep` 照正面圖 |
 | `VIEW_COUNT` | 4 | 4 視角較省顯存；6 是 MV-Adapter 官方設定，約需 14 GB VRAM |
 | `VIEW_SEED` | 1234 | 視角不理想時換一個數字 |
-| `SHAPE_MODEL` | 完整版 | character／monster 的形狀模型。完整版細節較好（T4 每個形狀約 3 分鐘）；turbo 約 30 秒 |
+| `SHAPE_MODEL` | 完整版 | character／monster／bigobject 的形狀模型（多視角）。完整版細節較好（T4 每個形狀約 3 分鐘）；turbo 約 30 秒 |
 | `SINGLE_SHAPE_MODEL` | 完整版 | armor／appearance／weapon 的形狀模型（Hunyuan3D-2 單張圖） |
 | `PAINT_MODEL` | 完整版 | turbo 較快 |
 | `TEXTURE_SIZE` | 2048 | 顯存不足時改 1024 |
