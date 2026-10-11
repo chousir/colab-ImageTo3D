@@ -50,7 +50,7 @@
    **character 的額外圖（選用）**：可以另外放同 id 的 `-left`、`-back`、`-right` 圖，例如 `character-novice_female-back.png`。有放的角度直接採用，沒放的才用 MV-Adapter 生成；提供的 right 也會一起拿來建形狀（生成的 right 只供檢視）。方向規則：**left 圖裡主體的正面朝向畫面左邊，right 圖朝向右邊**（left 是面對正面時往你的右手邊繞 90 度看到的樣子，跟 Hunyuan3D-2mv 範例一致）。用 Gemini 生成時，可以要求「same building, viewed from directly behind / from its left side, same lighting, plain background」。完成後這些額外圖也會改名為 `used-…`。
 
    **bigobject** 是 T4 能做到的最高設定，每棟可能要 15～30 分鐘。形狀網格 512 或 4K 貼圖放不下時，會自動改用 384 網格或 2048 貼圖重試，不會讓整批失敗。貼圖細節仍受限於貼圖模型每個視角 512 像素的生成解析度，近看大型建築時，細部材質建議在 Godot 疊加可重複的材質貼圖。
-3. 依序執行區塊 1～4。區塊 4 會處理 `in/` 裡所有未使用的正面圖；開著時繼續丟新圖也會接著做，閒置 `IDLE_STOP_MINUTES`（預設 30 分鐘）後自動停止。
+3. 依序執行區塊 1～4。區塊 4 會處理 `in/` 裡所有未使用的正面圖，**每輪 3 張**（`claim_batch`）：每張圖貼完圖就立刻輸出到 `out/` 並把來源圖改名 `used-…`，不用等整批做完；中途斷線時，看 `out/` 和 `used-…` 就知道哪些已完成，其餘的圖重跑時從中斷的階段接著做。開著時繼續丟新圖也會接著做，閒置 `IDLE_STOP_MINUTES`（預設 30 分鐘）後自動停止。
 4. 完成的檔案在 `out/`；區塊 5 可以看四視角預覽、列出失敗的圖、打包下載。
 
 區塊 3 安裝完成後**不需要重新啟動**；新 runtime 第一次約 3～5 分鐘，之後同一個 runtime 幾秒完成。
@@ -165,7 +165,7 @@ in/<類別>-<id>-<front|stuff>.png
 out/hunyuan3d-<類別>-<id>.glb / .json / -views.jpg
 ```
 
-- **每個階段是獨立的 Python 程序**：一次載入一個模型、處理完所有排隊的圖後結束，結束時 RAM 和 GPU 記憶體全部還給系統，所以連續跑很多張也不會累積到耗盡。多視角和單張圖要用不同的形狀模型，所以這兩組各自用一個程序。
+- **每個階段是獨立的 Python 程序**：一次載入一個模型、處理完這一輪的圖（`claim_batch` 張，預設 3）後結束，結束時 RAM 和 GPU 記憶體全部還給系統，所以連續跑很多張也不會累積到耗盡。多視角和單張圖要用不同的形狀模型，所以這兩組各自用一個程序。
 - **各模型都改成省記憶體的載入方式**：SDXL 以 fp16 載入、adapter 與形狀模型直接在 GPU 上以 fp16 建立、貼圖模型的權重用 mmap 按需讀取，避免免費版 12.7 GB 系統 RAM 爆掉。
 - **失敗隔離**：某張圖出錯（包括記憶體不足被系統終止）只記在那張圖上，下一輪再試一次，連續失敗兩次就跳過，其他圖照常處理。錯誤記在 `work/<類別>-<id>/status.json`。
 - **可以中斷**：中間檔存在 Drive 的 `work/`，斷線後重跑區塊 1～4，會從中斷的階段接著做。
@@ -207,6 +207,7 @@ Google Drive / MyDrive / RagnarokChange / hunyuan3d /
 | `SINGLE_SHAPE_MODEL` | 完整版 | armor／appearance／weapon 的形狀模型（Hunyuan3D-2 單張圖） |
 | `PAINT_MODEL` | 完整版 | turbo 較快 |
 | `TEXTURE_SIZE` | 2048 | 顯存不足時改 1024 |
+| `claim_batch`（`imageto3d/config.py`） | 3 | 每輪幾張圖。每輪每個模型只載入一次；數字小，完成的圖出來得快，數字大，載入模型的次數少 |
 | `WATCH`、`POLL_MINUTES`、`IDLE_STOP_MINUTES` | 開、2、30 | 持續監看 `in/` 的頻率與閒置多久停止 |
 | `PIPELINE_REF` | 目前分支 | 流程程式碼的版本；合併到 main 後改成 `main` |
 

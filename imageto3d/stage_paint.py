@@ -40,6 +40,10 @@ def process(paint, asset: Asset, config: Config) -> None:
             torch.cuda.empty_cache()
     print(f"  texture {texture_size}px, render {render_size}px", flush=True)
     textured.export(asset.textured_path)
+    # Export now rather than after the whole round, so each finished image is delivered (and its input
+    # renamed used-...) at once. If this fails, the export stage of the round retries it.
+    from . import stage_export
+    stage_export.process(None, asset, config)
 
 
 def set_sizes(paint, texture_size: int, render_size: int) -> None:

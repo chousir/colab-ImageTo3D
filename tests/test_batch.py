@@ -5,7 +5,7 @@ from PIL import Image
 from imageto3d import config as cfgmod, assets, run, stage_export
 
 root = tempfile.mkdtemp()
-cfg = cfgmod.Config(drive_root=root, hf_home=root + "/hf", rembg_home=root + "/rb")
+cfg = cfgmod.Config(drive_root=root, hf_home=root + "/hf", rembg_home=root + "/rb", claim_batch=100)
 os.makedirs(cfg.input_dir)
 def img(name):
     Image.new("RGB", (8, 8)).save(os.path.join(cfg.input_dir, name)); time.sleep(0.01)

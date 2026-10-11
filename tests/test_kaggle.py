@@ -161,3 +161,21 @@ assert sorted(zipfile.ZipFile(archive).namelist()) == [models.MANIFEST, "tencent
 assert models.pack(pack_root, os.path.join(root, "pack", "upload")) == archive  # rerun keeps the archive
 assert len(zipfile.ZipFile(archive).namelist()) == 2
 print("ALL OK (pack)")
+
+# Single GPU (Colab): rounds of claim_batch assets, so finished images are delivered batch by batch.
+solo_root = os.path.join(root, "solo")
+solo = cfgmod.Config(drive_root=solo_root, hf_home="", rembg_home="", claim_batch=2)
+for name in ("weapon-p-stuff.png", "weapon-q-stuff.png", "weapon-r-stuff.png"):
+    img(solo.input_dir, name)
+solo_path = os.path.join(root, "solo.json"); solo.save(solo_path)
+rounds = []
+def solo_stage(stage, keys, config_path, config):
+    rounds.append((stage, tuple(keys)))
+    return fake_stage(stage, keys, config_path, config)
+started.update({"MainThread"}); run._run_stage = solo_stage
+for asset in assets.pending(solo): assets.claim(asset, 0)  # fake_stage expects a claim file
+run.main(solo_path, watch=False)
+exports = [keys for stage, keys in rounds if stage == "export"]
+assert exports == [("weapon-p", "weapon-q"), ("weapon-r",)], rounds
+assert sorted(os.listdir(solo.input_dir)) == ["used-weapon-p-stuff.png", "used-weapon-q-stuff.png", "used-weapon-r-stuff.png"]
+print("ALL OK (rounds)")

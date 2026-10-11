@@ -74,34 +74,40 @@ def run_round(config_path: str, config: Config, only: Optional[List[str]] = None
     return len(worked)
 
 
-def claim_batch(config: Config, worker: int) -> List[asset_store.Asset]:
-    """Take up to claim_batch unclaimed assets, oldest first, for this worker."""
-    claimed = []
+def claim_batch(config: Config, worker: Optional[int]) -> List[asset_store.Asset]:
+    """Take up to claim_batch assets with work left, oldest first, assets that failed before last.
+
+    With a worker number the assets are claimed, so other GPU workers skip them until they are released.
+    """
+    candidates = []
     for asset in asset_store.pending(config):
-        if len(claimed) >= config.claim_batch:
-            break
         if asset_store.blocked(asset, config):
             asset_store._warn_once(f"blocked:{asset.key}", (
                 f"SKIPPED {asset.key}: failed {config.max_failures} times "
                 f"({asset_store.read_status(asset).get('last_error')}). Delete {asset.work}/status.json to retry."))
-            continue
-        if any(asset.needs(stage, config) for stage in STAGES) and asset_store.claim(asset, worker):
+        elif any(asset.needs(stage, config) for stage in STAGES):
+            candidates.append(asset)
+    candidates.sort(key=lambda asset: asset_store.read_status(asset).get("failures", 0))
+    claimed = []
+    for asset in candidates:
+        if len(claimed) >= config.claim_batch:
+            break
+        if worker is None or asset_store.claim(asset, worker):
             claimed.append(asset)
     return claimed
 
 
 def work_once(config_path: str, config: Config, worker: Optional[int]) -> int:
-    """One round: everything pending (single worker), or a claimed batch (one of several GPU workers)."""
-    if worker is None:
-        return run_round(config_path, config)
+    """One round over the next claim_batch assets (claimed when one of several GPU workers)."""
     claimed = claim_batch(config, worker)
     if not claimed:
         return 0
     try:
         return run_round(config_path, config, [asset.key for asset in claimed])
     finally:
-        for asset in claimed:
-            asset_store.release(asset)
+        if worker is not None:
+            for asset in claimed:
+                asset_store.release(asset)
 
 
 def main(config_path: str, watch: bool = True, worker: Optional[int] = None) -> None:

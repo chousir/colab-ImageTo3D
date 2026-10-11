@@ -113,8 +113,10 @@ class Config:
     stage_timeout_minutes: int = 90
     # Epoch seconds after which no new asset is started (0: no limit). Kaggle sessions end after 12 hours.
     deadline: float = 0.0
-    # Assets a worker takes at a time when several GPU workers share the queue.
-    claim_batch: int = 2
+    # Assets per round. A round loads each model once for its assets, and every asset is exported (and its
+    # input renamed used-...) right after it is painted. Smaller rounds finish images sooner; larger rounds
+    # load models less often. With several GPU workers, each worker takes this many at a time.
+    claim_batch: int = 3
 
     @property
     def input_dir(self) -> str:
