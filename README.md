@@ -75,7 +75,7 @@ full body front view, A-pose, plain white background
 | GPU | 1×T4 | 2×T4（各 16 GB，不是合成 32 GB）：每張卡各跑一份完整流程，從 `in/` 各拿 `CLAIM_BATCH` 張，不會重複 |
 | 系統 RAM | 約 12.7 GB | 約 29 GB，比較不會被系統砍掉程序 |
 | 精度 | 形狀網格 384、貼圖 2048（bigobject 例外） | `QUALITY = "high"`：所有類別形狀網格 512、4K 貼圖（渲染 2048）、較多面數（`imageto3d/config.py` 的 `HIGH_QUALITY_PRESETS`）；放不下時自動降回 384／2048 |
-| Drive | 直接掛載 | 沒有掛載功能；用 rclone 同步到相同的本機路徑 `/content/drive/MyDrive/RagnarokChange/hunyuan3d` |
+| Drive | 直接掛載 | 沒有掛載功能。`DRIVE_MODE = "manual"`（預設）：圖從 Drive 分享連結或 Kaggle Dataset 拿，成果打包成 zip 從 Output 下載；`"rclone"`：同步到相同的本機路徑 `/content/drive/MyDrive/RagnarokChange/hunyuan3d` |
 | 模型 | Drive 的 `hf_cache/` | 你自己的 private Kaggle Dataset，掛在 `/kaggle/input/…`，不用下載 |
 | 執行 | 要開著瀏覽器 | Save & Run All 在背景跑，最多 12 小時；`STOP_AFTER_HOURS`（預設 11）後不再開始新的圖，把成果傳回 Drive 才結束 |
 
@@ -85,14 +85,15 @@ full body front view, A-pose, plain white background
 
 **1. Kaggle 帳號**：到 kaggle.com/settings 做手機驗證（才能用 GPU 和網路）。
 
-**2. 讓 Kaggle 讀寫 Google Drive（rclone）**：在自己的電腦安裝 [rclone](https://rclone.org/downloads/)，然後：
+**2.（只有 `DRIVE_MODE = "rclone"` 需要）讓 Kaggle 讀寫 Google Drive**：在自己的電腦安裝 [rclone](https://rclone.org/downloads/)，然後：
 
 ```bash
 rclone config
 #   n                    新增 remote
 #   name> gdrive         名稱要跟 notebook 的 REMOTE 一致（gdrive:RagnarokChange/hunyuan3d）
 #   Storage> drive       Google Drive
-#   client_id、client_secret 直接按 Enter
+#   client_id、client_secret 直接按 Enter（新版 rclone 不能留空時，要先在 Google Cloud Console 建立
+#   「電腦版應用程式」OAuth 用戶端並把應用程式發布為正式版，否則 token 7 天後失效）
 #   scope> 1             完整存取（要能改名 in/ 的圖、寫 out/）
 #   service_account_file 按 Enter；Edit advanced config? n；Use web browser? y（在瀏覽器登入並同意）
 #   Configure as Shared Drive? n → y 確認 → q 離開
@@ -137,12 +138,15 @@ hf download tencent/Hunyuan3D-2 --local-dir models/tencent/Hunyuan3D-2 \
 ### 每次使用
 
 1. 匯入 [`hunyuan3d2_kaggle_2xt4.ipynb`](hunyuan3d2_kaggle_2xt4.ipynb)（第一次之後直接開啟）。
-2. Session options：Accelerator **GPU T4 x2**、Internet **on**；**Add Input** → Your Work → Datasets 加入模型 Dataset；Secrets 勾選 `RCLONE_CONF`（和 `HF_TOKEN`）。
-3. 圖照樣放進 Drive 的 `in/`。
+2. Session options：Accelerator **GPU T4 x2**、Internet **on**；**Add Input** → Your Work → Datasets 加入模型 Dataset。
+3. 準備圖（檔名規則同上），**manual 模式**二選一，也可以同時用：
+   - **Drive 分享連結**：在 Drive 建一個只放這次新圖的資料夾（例如 `kaggle_in`，**最多 50 個檔案**），共用 →「知道連結的任何人」可檢視，把連結貼到區塊 2 的 `IN_FOLDER_URL`。
+   - **Kaggle Dataset**：kaggle.com → Create → New Dataset，把圖拖進去（Private），再用 Add Input 加入。之後新增圖就在 Dataset 頁面 New Version。
 4. 想看過程就依序執行區塊 1～4；要整晚跑就按 **Save Version → Save & Run All (Commit)**，然後可以關掉瀏覽器。
-5. 成品每 `SYNC_MINUTES`（預設 5 分鐘）傳回 Drive 的 `out/`，完成的圖在 Drive 改名 `used-…`。中間檔也會傳回 `work/`，下次 session（Kaggle 或 Colab）會從中斷的階段接著做。
+5. 全部做完（或到 `STOP_AFTER_HOURS`）後，成果打包成 `/kaggle/working/hunyuan3d-out-<時間>.zip`：互動執行時在右側 **Output** 面板下載；背景執行時到該版本頁面的 **Output** 分頁下載。zip 內容跟 Drive 的 `out/` 一樣，解壓後放進 Drive 的 `out/` 即可。
+6. 區塊 4 最後會列出做完的圖，請把它們從分享資料夾或 Dataset 移走，不然下次會再做一次。
 
-第一次跑時，區塊 3 會編譯 CUDA 擴充並存到 Drive 的 `wheels/`（依 Python/torch/GPU 分資料夾，不會跟 Colab 的混用），之後幾秒就裝好。
+manual 模式下，沒做完的圖下次 session 要從頭做（中間檔不會保留），CUDA 擴充每次 session 也要重新編譯（約數分鐘）。`DRIVE_MODE = "rclone"` 時則會：每 `SYNC_MINUTES`（預設 5 分鐘）把成品傳回 Drive 的 `out/`、完成的圖在 Drive 改名 `used-…`、中間檔傳回 `work/` 讓下次 session 接著做、編譯好的擴充存到 Drive 的 `wheels/`。
 
 ### 時間與免費額度（估計，以實際的 log 為準）
 
@@ -216,7 +220,8 @@ Google Drive / MyDrive / RagnarokChange / hunyuan3d /
 | `hunyuan3d2_kaggle_2xt4.ipynb` | Kaggle 介面：rclone 同步 Drive、每張 GPU 一個 worker、高精度設定 |
 | `kaggle_prepare_models.ipynb` | Kaggle（CPU）：下載模型、上傳成 private Dataset |
 | `imageto3d/run.py` | 批次主程式：掃描 `in/`，依序啟動各階段程序，監看新檔案；`--worker N` 時跟其他 GPU 分工 |
-| `imageto3d/drive_sync.py` | Kaggle：用 rclone 同步 Drive 的 `in/`、`out/`、`work/`、`wheels/` |
+| `imageto3d/drive_sync.py` | Kaggle rclone 模式：同步 Drive 的 `in/`、`out/`、`work/`、`wheels/` |
+| `imageto3d/kaggle_io.py` | Kaggle manual 模式：從分享資料夾和 Dataset 收集圖、打包成果 |
 | `imageto3d/models.py` | 模型清單、下載到 Dataset 資料夾、在 `/kaggle/input` 找 Dataset |
 | `imageto3d/stage_views.py`、`stage_shape.py`、`stage_paint.py`、`stage_export.py` | 四個階段，各自是獨立程序 |
 | `imageto3d/assets.py` | 檔名解析、各階段是否需要重做、失敗紀錄、多 GPU 時的認領檔 |

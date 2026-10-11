@@ -43,7 +43,12 @@ box.export(GLB)
 from imageto3d import stage_export
 lock = threading.Lock()
 done_by = {}
+both_claimed = threading.Barrier(2, timeout=10)  # each worker holds its first batch before either works
+started = set()
 def fake_stage(stage, keys, config_path, config):
+    if threading.current_thread().name not in started:
+        started.add(threading.current_thread().name)
+        both_claimed.wait()
     for asset in assets.find(config, keys):
         assert open(os.path.join(asset.work, assets.CLAIM_FILE)).read() in ("0", "1")
         if stage == "views":
@@ -129,3 +134,19 @@ else:
     assert open(os.path.join(local, "work", "monster-g", "shape.glb")).read() == "new"
     assert sync.push_renames() == 0
 print("ALL OK")
+
+# manual mode: gather correctly named images from datasets / a downloaded folder, zip the results.
+from imageto3d import kaggle_io
+src_a = os.path.join(root, "dataset_a"); src_b = os.path.join(root, "drive_folder", "sub")
+img(src_a, "weapon-x-stuff.png"); img(src_a, "readme.png"); img(src_a, "used-weapon-y-stuff.png")
+img(src_b, "monster-z-front.png"); img(src_b, "monster-z-back.png"); img(src_b, "weapon-x-stuff.png")
+manual_in = os.path.join(root, "manual", "in")
+img(manual_in, "used-armor-w-stuff.png"); img(src_a, "armor-w-stuff.png")
+copied = kaggle_io.collect_inputs([os.path.join(root, "drive_folder"), src_a], manual_in)
+assert sorted(copied) == ["monster-z-back.png", "monster-z-front.png", "weapon-x-stuff.png"], copied
+assert kaggle_io.collect_inputs([src_a, src_b], manual_in) == []
+assert kaggle_io.finished_inputs(manual_in) == ["armor-w-stuff.png"]
+archive = kaggle_io.zip_outputs(cfg.out_dir, root)
+import zipfile
+assert "hunyuan3d-weapon-a.glb" in zipfile.ZipFile(archive).namelist()
+print("ALL OK (manual mode)")
