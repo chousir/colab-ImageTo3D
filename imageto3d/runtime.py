@@ -13,6 +13,9 @@ def setup(config: Config) -> None:
     os.environ["HF_HOME"] = config.hf_home
     os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
     os.environ["U2NET_HOME"] = config.rembg_home
+    if config.model_root:
+        # Hunyuan3D looks for <HY3DGEN_MODELS>/tencent/<repo>/<subfolder> before downloading.
+        os.environ["HY3DGEN_MODELS"] = config.model_root
     os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
     for path in (config.hunyuan_repo, config.mv_repo):
         if path not in sys.path:

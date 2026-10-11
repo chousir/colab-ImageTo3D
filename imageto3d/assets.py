@@ -207,5 +207,35 @@ def fail(asset: Asset, stage: str, error: str) -> None:
                  last_error=f"{stage}: {error}"[-2000:])
 
 
+# Claims: when several GPU workers share one queue, each asset is worked on by one worker at a time.
+# The claim file is created atomically, so two workers can never take the same asset.
+
+CLAIM_FILE = "claim.lock"
+
+
+def claim(asset: Asset, worker: int) -> bool:
+    os.makedirs(asset.work, exist_ok=True)
+    try:
+        handle = os.open(os.path.join(asset.work, CLAIM_FILE), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+    except FileExistsError:
+        return False
+    with os.fdopen(handle, "w") as file:
+        file.write(str(worker))
+    return True
+
+
+def release(asset: Asset) -> None:
+    try:
+        os.remove(os.path.join(asset.work, CLAIM_FILE))
+    except FileNotFoundError:
+        pass
+
+
+def clear_claims(config: Config) -> None:
+    """Remove claims left by workers of an earlier session."""
+    for path in glob.glob(os.path.join(config.work_dir, "*", CLAIM_FILE)):
+        os.remove(path)
+
+
 def blocked(asset: Asset, config: Config) -> bool:
     return read_status(asset).get("failures", 0) >= config.max_failures

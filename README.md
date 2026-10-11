@@ -2,6 +2,8 @@
 
 使用 Google Colab 免費版 T4，把 Drive 裡的一批正面圖自動做成貼好圖的 3D 模型（GLB）：MV-Adapter 補出側面與背面，Hunyuan3D-2mv 建形狀，Hunyuan3D-2 上貼圖。輸出格式符合 [RagnarokChange](https://github.com/chousir/RagnarokChange) 的素材投遞規則。Notebook：[`hunyuan3d2_colab_t4.ipynb`](hunyuan3d2_colab_t4.ipynb)
 
+另有 **Kaggle 2×T4 高精度版** [`hunyuan3d2_kaggle_2xt4.ipynb`](hunyuan3d2_kaggle_2xt4.ipynb)：兩張 GPU 同時做、所有類別都用最高設定、可以在背景跑 12 小時，見[下方說明](#kaggle-版2t4高精度)。
+
 ## 固定的 Colab 環境與套件版本
 
 在 Colab 選「執行階段 → 變更執行階段類型」：硬體加速器選 **T4 GPU**，**執行階段版本選 `2026.07`**。Colab 預設的最新版已改用 Python 3.13，部分套件（例如 `xatlas`）沒有 3.13 的預編譯 wheel，所以 Notebook 固定使用 2026.07。區塊 1 會檢查版本，不符時直接停止。
@@ -63,6 +65,90 @@ full body front view, A-pose, plain white background
 ```
 
 背包、頭飾、武器另外做成單獨的素材（armor／weapon），不要畫在角色身上。透明背景的 PNG 最好；不透明的圖會自動去背。單張圖的物品會把圖裡看得到的東西都建出來，例如髮型圖裡的假人頭也會變成模型的一部分，所以髮型圖最好只有頭髮。
+
+## Kaggle 版（2×T4，高精度）
+
+檔名規則、輸出、Drive 資料夾都跟 Colab 版一樣，兩者可以輪流使用（**不要同時跑**，兩邊會搶 `in/` 的同一張圖）。
+
+| 項目 | Colab 免費版 | Kaggle 版 |
+|---|---|---|
+| GPU | 1×T4 | 2×T4（各 16 GB，不是合成 32 GB）：每張卡各跑一份完整流程，從 `in/` 各拿 `CLAIM_BATCH` 張，不會重複 |
+| 系統 RAM | 約 12.7 GB | 約 29 GB，比較不會被系統砍掉程序 |
+| 精度 | 形狀網格 384、貼圖 2048（bigobject 例外） | `QUALITY = "high"`：所有類別形狀網格 512、4K 貼圖（渲染 2048）、較多面數（`imageto3d/config.py` 的 `HIGH_QUALITY_PRESETS`）；放不下時自動降回 384／2048 |
+| Drive | 直接掛載 | 沒有掛載功能；用 rclone 同步到相同的本機路徑 `/content/drive/MyDrive/RagnarokChange/hunyuan3d` |
+| 模型 | Drive 的 `hf_cache/` | 你自己的 private Kaggle Dataset，掛在 `/kaggle/input/…`，不用下載 |
+| 執行 | 要開著瀏覽器 | Save & Run All 在背景跑，最多 12 小時；`STOP_AFTER_HOURS`（預設 11）後不再開始新的圖，把成果傳回 Drive 才結束 |
+
+`VIEW_COUNT` 仍預設 4：6 視角多出的 45°、315° 不會用在建形狀，只多花顯存和時間。貼圖模型每個視角固定 512 px，這是模型本身的上限，GPU 多也無法提高。
+
+### 一次性設定
+
+**1. Kaggle 帳號**：到 kaggle.com/settings 做手機驗證（才能用 GPU 和網路）。
+
+**2. 讓 Kaggle 讀寫 Google Drive（rclone）**：在自己的電腦安裝 [rclone](https://rclone.org/downloads/)，然後：
+
+```bash
+rclone config
+#   n                    新增 remote
+#   name> gdrive         名稱要跟 notebook 的 REMOTE 一致（gdrive:RagnarokChange/hunyuan3d）
+#   Storage> drive       Google Drive
+#   client_id、client_secret 直接按 Enter
+#   scope> 1             完整存取（要能改名 in/ 的圖、寫 out/）
+#   service_account_file 按 Enter；Edit advanced config? n；Use web browser? y（在瀏覽器登入並同意）
+#   Configure as Shared Drive? n → y 確認 → q 離開
+rclone lsd gdrive:RagnarokChange/hunyuan3d   # 看得到 in、out、work 就成功
+rclone config file                            # 顯示 rclone.conf 的位置
+```
+
+在 Kaggle 任一 notebook 的 **Add-ons → Secrets** 新增 `RCLONE_CONF`，值貼上 rclone.conf 的**全部內容**。這個 token 可以存取你整個 Drive：只放在 Secrets，notebook 保持 Private。
+
+**3. Kaggle API token**（上傳模型 Dataset 用）：kaggle.com/settings → API → **Create New Token**。新版 token 存成 Secret `KAGGLE_API_TOKEN`；舊版 `kaggle.json` 則把裡面的 `key` 存成 `KAGGLE_KEY`。
+
+**4. 選用**：Hugging Face token 存成 Secret `HF_TOKEN`（下載限速或遇到 401/403 時）。
+
+### 建立模型 Dataset（只做一次，用 CPU）
+
+1. Kaggle → Create → **Import Notebook**，匯入 [`kaggle_prepare_models.ipynb`](kaggle_prepare_models.ipynb)。
+2. Session options：Accelerator **None**、Internet **on**；Secrets 勾選 `KAGGLE_API_TOKEN`（或 `KAGGLE_KEY`）、`HF_TOKEN`。
+3. 在區塊 1 填 `KAGGLE_USERNAME`，然後 Run All（或 Save & Run All 在背景跑）。不含 turbo 約 25～35 GB；Kaggle 機房連 Hugging Face 通常很快，每個 repo 的速度會印出來。
+4. 完成後打開印出的 Dataset 網址，確認是 **Private**，檔案裡看得到 `tencent/Hunyuan3D-2`、`imageto3d-models.json` 等。
+
+這個 notebook 下載的內容等同於下面的指令（`huggingface_hub` 0.36 的 `hf` 指令），只下載流程用得到的檔案，同時下載去背模型 `rembg/u2net.onnx`：
+
+```bash
+hf download stabilityai/stable-diffusion-xl-base-1.0 --local-dir models/stabilityai/stable-diffusion-xl-base-1.0 \
+  --include "model_index.json" "scheduler/*" "tokenizer/*" "tokenizer_2/*" \
+            "text_encoder/config.json" "text_encoder/model.fp16.safetensors" \
+            "text_encoder_2/config.json" "text_encoder_2/model.fp16.safetensors" \
+            "unet/config.json" "unet/diffusion_pytorch_model.fp16.safetensors" \
+            "vae/config.json" "vae/diffusion_pytorch_model.fp16.safetensors"
+hf download madebyollin/sdxl-vae-fp16-fix --local-dir models/madebyollin/sdxl-vae-fp16-fix \
+  --include "config.json" "diffusion_pytorch_model.safetensors"
+hf download huanngzh/mv-adapter --local-dir models/huanngzh/mv-adapter --include "mvadapter_i2mv_sdxl.safetensors"
+hf download tencent/Hunyuan3D-2mv --local-dir models/tencent/Hunyuan3D-2mv \
+  --include "hunyuan3d-dit-v2-mv/config.yaml" "hunyuan3d-dit-v2-mv/model.fp16.safetensors"
+hf download tencent/Hunyuan3D-2 --local-dir models/tencent/Hunyuan3D-2 \
+  --include "hunyuan3d-dit-v2-0/config.yaml" "hunyuan3d-dit-v2-0/model.fp16.safetensors" \
+            "hunyuan3d-delight-v2-0/*" "hunyuan3d-paint-v2-0/*"
+```
+
+要用 turbo 模型時，把 `INCLUDE_TURBO = True` 再跑一次（會成為同一個 Dataset 的新版本）。Dataset 裡沒有的模型會在生成時自動從 Hugging Face 下載到 session 的暫存空間。
+
+### 每次使用
+
+1. 匯入 [`hunyuan3d2_kaggle_2xt4.ipynb`](hunyuan3d2_kaggle_2xt4.ipynb)（第一次之後直接開啟）。
+2. Session options：Accelerator **GPU T4 x2**、Internet **on**；**Add Input** → Your Work → Datasets 加入模型 Dataset；Secrets 勾選 `RCLONE_CONF`（和 `HF_TOKEN`）。
+3. 圖照樣放進 Drive 的 `in/`。
+4. 想看過程就依序執行區塊 1～4；要整晚跑就按 **Save Version → Save & Run All (Commit)**，然後可以關掉瀏覽器。
+5. 成品每 `SYNC_MINUTES`（預設 5 分鐘）傳回 Drive 的 `out/`，完成的圖在 Drive 改名 `used-…`。中間檔也會傳回 `work/`，下次 session（Kaggle 或 Colab）會從中斷的階段接著做。
+
+第一次跑時，區塊 3 會編譯 CUDA 擴充並存到 Drive 的 `wheels/`（依 Python/torch/GPU 分資料夾，不會跟 Colab 的混用），之後幾秒就裝好。
+
+### 時間與免費額度（估計，以實際的 log 為準）
+
+每張圖在單張 T4、`QUALITY = "high"` 下的估計時間：character 15～20 分鐘、monster 12～15 分鐘、armor／weapon／appearance／object 8～12 分鐘、bigobject 25～40 分鐘。log 的 `[stage] <id>: done in … s` 是實際秒數。
+
+Kaggle GPU 免費額度每週約 30 小時（以 kaggle.com 帳號頁顯示為準），每個 session 最多 12 小時。兩張卡同時做，每週約可完成：全部 character 約 170～220 個、全部小物件約 280～400 個、全部 bigobject 約 85～130 棟；混合約 150～250 個。
 
 ## 流程與記憶體
 
@@ -127,9 +213,13 @@ Google Drive / MyDrive / RagnarokChange / hunyuan3d /
 | 檔案 | 用途 |
 |---|---|
 | `hunyuan3d2_colab_t4.ipynb` | Colab 介面：檢查環境、設定、安裝、執行批次、看結果 |
-| `imageto3d/run.py` | 批次主程式：掃描 `in/`，依序啟動各階段程序，監看新檔案 |
+| `hunyuan3d2_kaggle_2xt4.ipynb` | Kaggle 介面：rclone 同步 Drive、每張 GPU 一個 worker、高精度設定 |
+| `kaggle_prepare_models.ipynb` | Kaggle（CPU）：下載模型、上傳成 private Dataset |
+| `imageto3d/run.py` | 批次主程式：掃描 `in/`，依序啟動各階段程序，監看新檔案；`--worker N` 時跟其他 GPU 分工 |
+| `imageto3d/drive_sync.py` | Kaggle：用 rclone 同步 Drive 的 `in/`、`out/`、`work/`、`wheels/` |
+| `imageto3d/models.py` | 模型清單、下載到 Dataset 資料夾、在 `/kaggle/input` 找 Dataset |
 | `imageto3d/stage_views.py`、`stage_shape.py`、`stage_paint.py`、`stage_export.py` | 四個階段，各自是獨立程序 |
-| `imageto3d/assets.py` | 檔名解析、各階段是否需要重做、失敗紀錄 |
+| `imageto3d/assets.py` | 檔名解析、各階段是否需要重做、失敗紀錄、多 GPU 時的認領檔 |
 | `imageto3d/runtime.py` | 記憶體相關工具（fp16 直接建在 GPU、mmap 讀權重、釋放記憶體） |
 | `imageto3d/config.py` | 所有設定與預設值 |
 

@@ -24,8 +24,8 @@ def load_multiview(config: Config):
     # Free Colab has 12.7 GB RAM and T4 has 15 GB VRAM: load SDXL in fp16, move only the UNet to the GPU,
     # then build the adapter layers directly on the GPU (upstream creates ~0.8B fp32 parameters on the CPU).
     pipe = MVAdapterI2MVSDXLPipeline.from_pretrained(
-        config.view_base_model,
-        vae=AutoencoderKL.from_pretrained(config.view_vae_model, torch_dtype=torch.float16),
+        config.model_source(config.view_base_model),
+        vae=AutoencoderKL.from_pretrained(config.model_source(config.view_vae_model), torch_dtype=torch.float16),
         torch_dtype=torch.float16,
         variant="fp16",
         use_safetensors=True,
@@ -37,7 +37,7 @@ def load_multiview(config: Config):
     with runtime.build_on_gpu_fp16():
         pipe.init_custom_adapter(num_views=len(config.view_azimuths))
     runtime.release()
-    pipe.load_custom_adapter(config.view_adapter_repo, weight_name="mvadapter_i2mv_sdxl.safetensors")
+    pipe.load_custom_adapter(config.model_source(config.view_adapter_repo), weight_name="mvadapter_i2mv_sdxl.safetensors")
     pipe.to(device="cuda", dtype=torch.float16)
     pipe.cond_encoder.to(device="cuda", dtype=torch.float16)
     pipe.enable_vae_slicing()

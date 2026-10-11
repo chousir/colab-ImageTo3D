@@ -46,6 +46,9 @@ class Config:
     rembg_home: str
     hunyuan_repo: str = "/content/Hunyuan3D-2"
     mv_repo: str = "/content/MV-Adapter"
+    # Folder with pre-downloaded weights laid out as <repo owner>/<repo name>/... (Kaggle model dataset,
+    # see imageto3d/models.py). Empty: download from Hugging Face into hf_home.
+    model_root: str = ""
 
     # Multiview generation (MV-Adapter SDXL).
     view_base_model: str = "stabilityai/stable-diffusion-xl-base-1.0"
@@ -108,6 +111,10 @@ class Config:
     idle_stop_minutes: int = 30
     max_failures: int = 2
     stage_timeout_minutes: int = 90
+    # Epoch seconds after which no new asset is started (0: no limit). Kaggle sessions end after 12 hours.
+    deadline: float = 0.0
+    # Assets a worker takes at a time when several GPU workers share the queue.
+    claim_batch: int = 2
 
     @property
     def input_dir(self) -> str:
@@ -125,6 +132,11 @@ class Config:
     def view_azimuths(self) -> List[int]:
         return [0, 45, 90, 180, 270, 315] if self.view_count == 6 else [0, 90, 180, 270]
 
+    def model_source(self, repo: str) -> str:
+        """Local copy of a Hugging Face repo under model_root when present, otherwise the repo id."""
+        path = os.path.join(self.model_root, repo) if self.model_root else ""
+        return path if path and os.path.isdir(path) else repo
+
     def preset(self, category: str, key: str):
         """Per-category value, falling back to the global setting of the same name."""
         value = self.presets[category].get(key)
@@ -141,6 +153,23 @@ class Config:
         os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, "w") as file:
             json.dump(asdict(self), file, indent=2)
+
+
+# Kaggle (2x T4, about 29 GB RAM): finest shape grid and 4K textures for every category, more faces.
+# The global texture_size/render_size stay the fallback when 4K does not fit, as for bigobject on Colab.
+HIGH_QUALITY_PRESETS: Dict[str, Dict[str, float]] = {
+    "character": {"max_faces": 100000, "octree": 512, "texture_size": 4096, "render_size": 2048},
+    "monster": {"max_faces": 100000, "octree": 512, "texture_size": 4096, "render_size": 2048},
+    "armor": {"max_faces": 50000, "octree": 512, "texture_size": 4096, "render_size": 2048},
+    "appearance": {"max_faces": 60000, "octree": 512, "texture_size": 4096, "render_size": 2048},
+    "weapon": {"max_faces": 40000, "octree": 512, "texture_size": 4096, "render_size": 2048},
+    "equipment": {"max_faces": 40000, "octree": 512, "texture_size": 4096, "render_size": 2048},
+    "prop": {"max_faces": 40000, "octree": 512, "texture_size": 4096, "render_size": 2048},
+    "environment": {"max_faces": 150000, "octree": 512, "texture_size": 4096, "render_size": 2048},
+    "object": {"max_faces": 50000, "octree": 512, "texture_size": 4096, "render_size": 2048},
+    "bigobject": {"max_faces": 300000, "octree": 512, "texture_size": 4096, "render_size": 2048,
+                  "min_component_ratio": 0.0002},
+}
 
 
 def load(path: str) -> Config:

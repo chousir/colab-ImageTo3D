@@ -8,7 +8,7 @@ import subprocess
 import sys
 import threading
 import time
-from typing import List
+from typing import List, Optional
 
 from . import assets as asset_store
 from .config import Config
@@ -37,12 +37,15 @@ def _run_stage(stage: str, keys: List[str], config_path: str, config: Config) ->
     return process.wait()
 
 
-def run_round(config_path: str, config: Config) -> int:
-    """One pass over all pending assets. Returns how many assets had work."""
+def run_round(config_path: str, config: Config, only: Optional[List[str]] = None) -> int:
+    """One pass over all pending assets (or only those keys). Returns how many assets had work."""
     worked = set()
     for stage in STAGES:
+        if config.deadline and time.time() >= config.deadline:
+            break
         queue = [asset for asset in asset_store.pending(config)
-                 if not asset_store.blocked(asset, config) and asset.needs(stage, config)
+                 if (only is None or asset.key in only)
+                 and not asset_store.blocked(asset, config) and asset.needs(stage, config)
                  and all(not asset.needs(previous, config) for previous in STAGES[:STAGES.index(stage)])]
         if not queue:
             continue
@@ -64,20 +67,53 @@ def run_round(config_path: str, config: Config) -> int:
                     asset_store.fail(asset, stage, f"process exited with code {code}")
             worked.update(keys)
     for asset in asset_store.pending(config):
-        if asset_store.blocked(asset, config):
+        if (only is None or asset.key in only) and asset_store.blocked(asset, config):
             print(f"SKIPPED {asset.key}: failed {config.max_failures} times "
                   f"({asset_store.read_status(asset).get('last_error')}). "
                   f"Delete {asset.work}/status.json to retry.", flush=True)
     return len(worked)
 
 
-def main(config_path: str, watch: bool = True) -> None:
+def claim_batch(config: Config, worker: int) -> List[asset_store.Asset]:
+    """Take up to claim_batch unclaimed assets, oldest first, for this worker."""
+    claimed = []
+    for asset in asset_store.pending(config):
+        if len(claimed) >= config.claim_batch:
+            break
+        if asset_store.blocked(asset, config):
+            asset_store._warn_once(f"blocked:{asset.key}", (
+                f"SKIPPED {asset.key}: failed {config.max_failures} times "
+                f"({asset_store.read_status(asset).get('last_error')}). Delete {asset.work}/status.json to retry."))
+            continue
+        if any(asset.needs(stage, config) for stage in STAGES) and asset_store.claim(asset, worker):
+            claimed.append(asset)
+    return claimed
+
+
+def work_once(config_path: str, config: Config, worker: Optional[int]) -> int:
+    """One round: everything pending (single worker), or a claimed batch (one of several GPU workers)."""
+    if worker is None:
+        return run_round(config_path, config)
+    claimed = claim_batch(config, worker)
+    if not claimed:
+        return 0
+    try:
+        return run_round(config_path, config, [asset.key for asset in claimed])
+    finally:
+        for asset in claimed:
+            asset_store.release(asset)
+
+
+def main(config_path: str, watch: bool = True, worker: Optional[int] = None) -> None:
     from .config import load
     config = load(config_path)
     idle_since = time.time()
     while True:
+        if config.deadline and time.time() >= config.deadline:
+            print("Session time limit reached; stopping so results can be saved.", flush=True)
+            break
         started = time.time()
-        if run_round(config_path, config):
+        if work_once(config_path, config, worker):
             idle_since = time.time()
             print(f"\nRound finished in {(time.time() - started) / 60:.1f} min. Outputs: {config.out_dir}", flush=True)
             continue  # New files may have arrived while this round ran.
@@ -97,5 +133,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", required=True)
     parser.add_argument("--once", action="store_true")
+    # Set by the Kaggle notebook: one worker per GPU (CUDA_VISIBLE_DEVICES), sharing the queue through claims.
+    parser.add_argument("--worker", type=int)
     arguments = parser.parse_args()
-    main(arguments.config, watch=not arguments.once)
+    main(arguments.config, watch=not arguments.once, worker=arguments.worker)

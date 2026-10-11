@@ -27,6 +27,9 @@ def run_stage(stage: str, load_model: Callable[[Config, List[asset_store.Asset]]
     runtime.release()
     runtime.report(f"{stage} model ready ({time.time() - started:.0f} s)")
     for asset in queue:
+        if config.deadline and time.time() >= config.deadline:
+            print(f"[{stage}] session time limit reached; leaving {asset.key} for the next session", flush=True)
+            break
         asset_store.begin(asset, stage)
         started = time.time()
         try:
