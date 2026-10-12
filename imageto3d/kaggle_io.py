@@ -37,7 +37,12 @@ def finished_inputs(input_dir: str) -> List[str]:
     return sorted(name[len("used-"):] for name in os.listdir(input_dir) if name.startswith("used-"))
 
 
-def zip_outputs(out_dir: str, dest_dir: str) -> str:
-    """Pack out/ into one zip in dest_dir; returns its path."""
-    base = os.path.join(dest_dir, f"hunyuan3d-out-{time.strftime('%Y%m%d-%H%M')}")
-    return shutil.make_archive(base, "zip", out_dir)
+def zip_results(root: str, dest_dir: str) -> str:
+    """Pack in/ (finished images renamed used-...) and out/ into one zip in dest_dir; returns its path."""
+    import zipfile
+    path = os.path.join(dest_dir, f"hunyuan3d-results-{time.strftime('%Y%m%d-%H%M')}.zip")
+    with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_STORED, allowZip64=True) as bundle:
+        for folder in ("in", "out"):
+            for name in sorted(os.listdir(os.path.join(root, folder))):
+                bundle.write(os.path.join(root, folder, name), f"{folder}/{name}")
+    return path

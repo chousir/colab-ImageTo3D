@@ -146,9 +146,10 @@ copied = kaggle_io.collect_inputs([os.path.join(root, "drive_folder"), src_a], m
 assert sorted(copied) == ["monster-z-back.png", "monster-z-front.png", "weapon-x-stuff.png"], copied
 assert kaggle_io.collect_inputs([src_a, src_b], manual_in) == []
 assert kaggle_io.finished_inputs(manual_in) == ["armor-w-stuff.png"]
-archive = kaggle_io.zip_outputs(cfg.out_dir, root)
+archive = kaggle_io.zip_results(cfg.drive_root, root)
 import zipfile
-assert "hunyuan3d-weapon-a.glb" in zipfile.ZipFile(archive).namelist()
+names = zipfile.ZipFile(archive).namelist()
+assert "out/hunyuan3d-weapon-a.glb" in names and "in/used-weapon-a-stuff.png" in names, names
 print("ALL OK (manual mode)")
 
 # Packing for upload: files move into one zip (root emptied) and keep their relative paths.

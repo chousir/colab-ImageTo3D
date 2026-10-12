@@ -143,8 +143,9 @@ hf download tencent/Hunyuan3D-2 --local-dir models/tencent/Hunyuan3D-2 \
    - **Drive 分享連結**：在 Drive 建一個只放這次新圖的資料夾（例如 `kaggle_in`，**最多 50 個檔案**），共用 →「知道連結的任何人」可檢視，把連結貼到區塊 2 的 `IN_FOLDER_URL`。
    - **Kaggle Dataset**：kaggle.com → Create → New Dataset，把圖拖進去（Private），再用 Add Input 加入。之後新增圖就在 Dataset 頁面 New Version。
 4. 想看過程就依序執行區塊 1～4；要整晚跑就按 **Save Version → Save & Run All (Commit)**，然後可以關掉瀏覽器。
-5. 全部做完（或到 `STOP_AFTER_HOURS`）後，成果打包成 `/kaggle/working/hunyuan3d-out-<時間>.zip`：互動執行時在右側 **Output** 面板下載；背景執行時到該版本頁面的 **Output** 分頁下載。zip 內容跟 Drive 的 `out/` 一樣，解壓後放進 Drive 的 `out/` 即可。
-6. 區塊 4 最後會列出做完的圖，請把它們從分享資料夾或 Dataset 移走，不然下次會再做一次。
+5. 每張圖做完就立刻寫出 GLB 到 `/kaggle/working/hunyuan3d/out/`，再把 Kaggle 這邊 `in/` 裡它用到的圖改名 `used-…`，然後才做下一張。有 `IN_FOLDER_URL` 時，跑的過程中每 `SYNC_MINUTES`（預設 5 分鐘）會再檢查分享資料夾，**繼續丟新圖也會接著做**（Dataset 在 session 中不會變，只在開始時讀一次）。
+6. 全部做完（或到 `STOP_AFTER_HOURS`）後，`in/` 和 `out/` 打包成 `/kaggle/working/hunyuan3d-results-<時間>.zip`：互動執行時在右側 **Output** 面板下載；背景執行時到該版本頁面的 **Output** 分頁下載。中途斷掉沒打包時，`/kaggle/working/hunyuan3d/` 也可以直接下載（互動 session 還開著時）。`out/` 的檔案放進 Drive 的 `out/`。
+7. **Kaggle 不能改你 Drive 裡的檔名**：`used-…` 只出現在 Kaggle 這邊的 `in/`（zip 裡的 `in/`）。照著 zip 的 `in/`，把 Drive 分享資料夾裡對應的圖也改名 `used-…` 或移走，不然下次 session 會再做一次；沒有 `used-` 的就是還沒做完。
 
 manual 模式下，沒做完的圖下次 session 要從頭做（中間檔不會保留），CUDA 擴充每次 session 也要重新編譯（約數分鐘）。`DRIVE_MODE = "rclone"` 時則會：每 `SYNC_MINUTES`（預設 5 分鐘）把成品傳回 Drive 的 `out/`、完成的圖在 Drive 改名 `used-…`、中間檔傳回 `work/` 讓下次 session 接著做、編譯好的擴充存到 Drive 的 `wheels/`。
 
