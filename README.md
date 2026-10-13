@@ -64,7 +64,7 @@ same character and outfit, completely bald head with no hair, no helmet, no back
 full body front view, A-pose, plain white background
 ```
 
-背包、頭飾、武器另外做成單獨的素材（armor／weapon），不要畫在角色身上。透明背景的 PNG 最好；不透明的圖會自動去背。單張圖的物品會把圖裡看得到的東西都建出來，例如髮型圖裡的假人頭也會變成模型的一部分，所以髮型圖最好只有頭髮。
+背包、頭飾、武器另外做成單獨的素材（armor／weapon），不要畫在角色身上。透明背景的 PNG 最好；不透明的圖會自動去背（rembg `isnet-general-use`，設定在 `imageto3d/config.py` 的 `rembg_model`；舊的 u2net 會把灰色背景上的灰色劍刃整個去掉）。去背結果是 `-views.jpg` 的第一格，劍刃或淺色部分不見時就是去背的問題；要重做舊的圖，刪掉 `work/<類別>-<id>/` 並把 `used-` 圖改回原檔名。單張圖的物品會把圖裡看得到的東西都建出來，例如髮型圖裡的假人頭也會變成模型的一部分，所以髮型圖最好只有頭髮。
 
 ## Kaggle 版（2×T4，高精度）
 
