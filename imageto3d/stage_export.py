@@ -70,6 +70,7 @@ def process(_, asset: Asset, config: Config) -> None:
         "supplied_views": {view: os.path.basename(path) for view, path in asset.supplied.items()},
         "generated_views": asset.generated_views,
         "head_mode": config.head_mode,
+        "background_remover": f"rembg/{config.rembg_model}",
         "height_m": round(float(extents[1]), 3),
         "size_m": [round(float(value), 3) for value in extents],
         "scaled_to_height_m": height,

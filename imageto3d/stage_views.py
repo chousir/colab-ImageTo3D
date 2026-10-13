@@ -7,8 +7,8 @@ from .stages import run_stage
 
 
 def load_model(config: Config, queue):
-    from hy3dgen.rembg import BackgroundRemover
-    model = {"rembg": BackgroundRemover(), "pipe": None}
+    from .runtime import background_remover
+    model = {"rembg": background_remover(config), "pipe": None}
     if any(asset.generated_views for asset in queue):
         model["pipe"] = load_multiview(config)
     return model

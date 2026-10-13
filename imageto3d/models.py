@@ -12,7 +12,8 @@ import urllib.request
 from typing import Dict, List, Optional
 
 MANIFEST = "imageto3d-models.json"
-REMBG_URL = "https://github.com/danielgatis/rembg/releases/download/v0.0.0/u2net.onnx"
+REMBG_URL = "https://github.com/danielgatis/rembg/releases/download/v0.0.0/{}.onnx"
+REMBG_MODELS = ("isnet-general-use", "u2net")
 
 
 def _hunyuan(subfolder: str) -> List[str]:
@@ -64,8 +65,9 @@ def download(root: str, include_turbo: bool = False, token: Optional[str] = None
         print(f"{repo}: {size:.1f} GB in {seconds / 60:.1f} min ({size * 1024 / seconds:.0f} MB/s)", flush=True)
     rembg_dir = os.path.join(root, "rembg")
     os.makedirs(rembg_dir, exist_ok=True)
-    if not os.path.exists(os.path.join(rembg_dir, "u2net.onnx")):
-        urllib.request.urlretrieve(REMBG_URL, os.path.join(rembg_dir, "u2net.onnx"))
+    for name in REMBG_MODELS:
+        if not os.path.exists(os.path.join(rembg_dir, f"{name}.onnx")):
+            urllib.request.urlretrieve(REMBG_URL.format(name), os.path.join(rembg_dir, f"{name}.onnx"))
     # Downloader bookkeeping is not part of the dataset.
     for repo in spec:
         cache = os.path.join(root, repo, ".cache")

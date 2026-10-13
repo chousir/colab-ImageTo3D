@@ -6,7 +6,6 @@ from .stages import run_stage
 
 def load_model(config: Config, queue):
     import torch
-    from hy3dgen.rembg import BackgroundRemover
     from hy3dgen.shapegen import Hunyuan3DDiTFlowMatchingPipeline
     from . import runtime
 
@@ -21,7 +20,7 @@ def load_model(config: Config, queue):
         if config.shape_flashvdm and "turbo" in subfolder:
             pipe.enable_flashvdm()  # Official turbo setting: turbo VAE plus a faster decoder.
     print(f"  shape model: {repo}/{subfolder}", flush=True)
-    return {"pipe": pipe, "rembg": BackgroundRemover(), "turbo": "turbo" in subfolder}
+    return {"pipe": pipe, "rembg": runtime.background_remover(config), "turbo": "turbo" in subfolder}
 
 
 def prepare(model, path: str):

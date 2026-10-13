@@ -22,6 +22,13 @@ def setup(config: Config) -> None:
             sys.path.insert(0, path)
 
 
+def background_remover(config: Config):
+    """rembg cutout with the configured model; returns an RGBA image with a transparent background."""
+    from rembg import new_session, remove
+    session = new_session(config.rembg_model)
+    return lambda image: remove(image, session=session, bgcolor=[255, 255, 255, 0])
+
+
 def release() -> None:
     """Return freed Python and CUDA memory to the OS."""
     gc.collect()

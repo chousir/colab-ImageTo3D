@@ -64,6 +64,9 @@ class Config:
     view_prompt: str = ("same subject as the reference image, preserve its category, silhouette, colors and "
                         "distinctive details, orthographic multi-view turnaround, plain neutral background, no text")
     view_negative_prompt: str = "watermark, low quality, deformed, inconsistent design, extra objects, text"
+    # Background removal (rembg). isnet-general-use keeps grey or white parts on grey backgrounds, such as
+    # sword blades, that u2net removes as background.
+    rembg_model: str = "isnet-general-use"
     # "bald": characters (not monsters) are generated without hair; hair and head are separate assets.
     head_mode: str = "bald"
 
