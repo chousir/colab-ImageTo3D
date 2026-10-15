@@ -187,6 +187,8 @@ Kaggle GPU 免費額度每週約 30 小時（以 kaggle.com 帳號頁顯示為�
 
 monster、bigobject 記得要 `"views": ["front", "back"]`（3D 流程需要背面）。character 只做正面也可以，3D 流程會自己補視角。
 
+**第一次使用**：FLUX.1-schnell 在 Hugging Face 需要先同意條款：登入後到 https://huggingface.co/black-forest-labs/FLUX.1-schnell 按 Agree and access repository，在 https://huggingface.co/settings/tokens 建 Read token，存成 Kaggle Secret `HF_TOKEN` 並勾選給 notebook。
+
 **時間（估計）**：FLUX 每張正面約 30～60 秒，補視角每項約 1～2 分鐘；第一次 session 要下載 FLUX（約 34 GB）。
 
 ## 流程與記憶體
