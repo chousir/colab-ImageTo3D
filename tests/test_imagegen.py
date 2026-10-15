@@ -65,3 +65,14 @@ assert sorted(a.key for a in assets.pending(pipeline)) == ["character-knight", "
 cfg.save(os.path.join(root, "cfg.json")); assert imagegen.load_config(os.path.join(root, "cfg.json")) == cfg
 assert cfg.pipeline_config().rembg_model == "isnet-general-use"
 print("ALL OK")
+
+# Long descriptions: FLUX reads 256 T5 tokens; the 3D conditions are kept and the description's end is cut.
+words = lambda text: len(text.replace(",", " ").split())
+subject, conditions = imagegen.prompt_parts({"name": "bigobject-bridge", "prompt": "a " + "very " * 300 + "long bridge."}, {})
+text, dropped = imagegen.fit_prompt(subject, conditions, words, 256)
+assert text.endswith(conditions) and words(text) <= 256 and dropped.endswith("long bridge"), dropped[-30:]
+assert imagegen.fit_prompt("a short sword", conditions, words, 256) == (f"a short sword, {conditions}", "")
+assert imagegen.fit_prompt("x " * 10, conditions, words, 3)[0] == conditions  # nothing fits: conditions alone
+clip = imagegen.clip_prompt({"name": "weapon-a", "prompt": "a dagger"}, {})
+assert clip.startswith("single weapon standing vertically") and clip.endswith("a dagger")
+print("ALL OK (long prompts)")

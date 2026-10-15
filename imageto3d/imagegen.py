@@ -29,9 +29,8 @@ DEVICE = "cuda"  # tests run the same code on the CPU
 DEFAULT_STYLE = "photorealistic high-detail game asset, realistic PBR materials"
 # Shared framing that suits image-to-3D: one subject, fully visible, flat light, plain mid-grey backdrop
 # (light objects on white get removed with the background).
-FRAMING = ("single subject centered, entire subject fully in frame with empty margin around it, "
-           "straight-on front view, orthographic, plain uniform medium grey background, "
-           "soft even studio lighting, no cast shadows, no text, no watermark")
+FRAMING = ("single subject centered, whole subject in frame with margin, straight front view, orthographic, "
+           "plain medium grey background, even studio lighting, no shadows, no text")
 CATEGORY_HINTS = {
     "character": "full body, standing in A-pose with arms slightly away from the body, completely bald head "
                  "with no hair, no headwear, no weapon, no backpack",
@@ -125,10 +124,32 @@ def category(item: Dict) -> str:
     return item["name"].partition("-")[0]
 
 
-def full_prompt(item: Dict, defaults: Dict) -> str:
+def prompt_parts(item: Dict, defaults: Dict):
+    """(subject, conditions): the user's description, and the hints, style and framing added for 3D."""
     style = item.get("style", defaults.get("style", DEFAULT_STYLE))
-    parts = [item["prompt"].strip().rstrip("."), CATEGORY_HINTS.get(category(item), ""), style, FRAMING]
-    return ", ".join(part for part in parts if part)
+    conditions = ", ".join(part for part in (CATEGORY_HINTS.get(category(item), ""), style, FRAMING) if part)
+    return item["prompt"].strip().rstrip("."), conditions
+
+
+def full_prompt(item: Dict, defaults: Dict) -> str:
+    return ", ".join(prompt_parts(item, defaults))
+
+
+def clip_prompt(item: Dict, defaults: Dict) -> str:
+    """CLIP reads only 77 tokens: conditions first, so the cut falls on the end of the description."""
+    subject, conditions = prompt_parts(item, defaults)
+    return f"{conditions}, {subject}"
+
+
+def fit_prompt(subject: str, conditions: str, count_tokens, limit: int):
+    """T5 prompt within `limit` tokens: the conditions are always kept, the description is shortened
+    word by word from its end. Returns (prompt, dropped words)."""
+    words = subject.split()
+    kept = len(words)
+    while kept > 0 and count_tokens(f"{' '.join(words[:kept])}, {conditions}") > limit:
+        kept -= 1
+    text = f"{' '.join(words[:kept])}, {conditions}" if kept else conditions
+    return text, " ".join(words[kept:])
 
 
 def seed(item: Dict, defaults: Dict) -> int:
@@ -199,20 +220,32 @@ def load_flux(config: ImageGenConfig):
                                         text_encoder_2=None, tokenizer=None, tokenizer_2=None, torch_dtype=dtype)
 
 
-def encode_prompts(config: ImageGenConfig, prompts: List[str]):
-    """CLIP and T5 embeddings, computed in bfloat16 (T5 overflows in float16) and then unloaded."""
+def encode_prompts(config: ImageGenConfig, items: List[Dict], defaults: Dict):
+    """CLIP and T5 embeddings, computed in bfloat16 (T5 overflows in float16) and then unloaded.
+
+    FLUX.1-schnell reads at most max_sequence_length T5 tokens; a long description is shortened so the
+    3D conditions (background, framing) are never the part that is cut off.
+    """
     import torch
     from diffusers import FluxPipeline
     from . import runtime
     text = FluxPipeline.from_pretrained(config.flux_model, transformer=None, vae=None, torch_dtype=torch.bfloat16)
+    count = lambda prompt: len(text.tokenizer_2(prompt).input_ids)
+    prompts = []
+    for item in items:
+        t5_prompt, dropped = fit_prompt(*prompt_parts(item, defaults), count, config.max_sequence_length)
+        if dropped:
+            print(f"  {item['name']}: description longer than FLUX reads ({config.max_sequence_length} tokens); "
+                  f"left out the end: \"{dropped}\"", flush=True)
+        prompts.append((clip_prompt(item, defaults), t5_prompt))
 
     def encode(device: str):
         text.text_encoder.to(device)
         text.text_encoder_2.to(device)
         with torch.no_grad():
             return [tuple(part.cpu() for part in text.encode_prompt(
-                prompt=prompt, prompt_2=None, device=device, max_sequence_length=config.max_sequence_length)[:2])
-                for prompt in prompts]
+                prompt=clip_text, prompt_2=t5_text, device=device, max_sequence_length=config.max_sequence_length)[:2])
+                for clip_text, t5_text in prompts]
 
     try:
         encoded = encode(DEVICE)
@@ -223,7 +256,7 @@ def encode_prompts(config: ImageGenConfig, prompts: List[str]):
         encoded = encode("cpu")
     del text
     runtime.release()
-    return encoded
+    return encoded, [t5_text for _, t5_text in prompts]
 
 
 def run_front(config: ImageGenConfig, items: List[Dict], defaults: Dict) -> None:
@@ -234,9 +267,8 @@ def run_front(config: ImageGenConfig, items: List[Dict], defaults: Dict) -> None
         return
     pipeline_config = runtime_setup(config)
     remover = runtime.background_remover(pipeline_config)
-    prompts = [full_prompt(item, defaults) for item in todo]
     started = time.time()
-    encoded = encode_prompts(config, prompts)
+    encoded, prompts = encode_prompts(config, todo, defaults)
     pipe = load_flux(config)
     pipe.vae.to(DEVICE, dtype=torch.float32)  # decoded separately in float32
     dtype = getattr(torch, config.transformer_dtype)
