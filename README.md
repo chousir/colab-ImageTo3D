@@ -155,6 +155,40 @@ manual 模式下，沒做完的圖下次 session 要從頭做（中間檔不會�
 
 Kaggle GPU 免費額度每週約 30 小時（以 kaggle.com 帳號頁顯示為準），每個 session 最多 12 小時。兩張卡同時做，每週約可完成：全部 character 約 170～220 個、全部小物件約 280～400 個、全部 bigobject 約 85～130 棟；混合約 150～250 個。
 
+## Kaggle 文字生圖（prompts.json → 透明 PNG）
+
+[`kaggle_imagegen_2xt4.ipynb`](kaggle_imagegen_2xt4.ipynb) 依 `prompts.json` 產生可直接放進 `in/` 的圖，同樣用 2×T4、背景執行、跑完打包 zip。
+
+- **正面**：FLUX.1-schnell（Apache-2.0；4-bit 量化放進 T4，T5 文字編碼用 bfloat16 算完就卸載）。描述後面自動加上：類別提示（character：A-pose、光頭、不拿武器；weapon：直立、尖端朝上；appearance：只有頭髮…）、寫實風格（`photorealistic high-detail game asset, realistic PBR materials`）、單一物體置中完整入鏡、中灰背景、平光無陰影。中灰背景是為了避免淺色物體在去背時被當成背景。
+- **其他視角**：以生成的正面為準用 MV-Adapter 生成，所以各視角是同一個物體（畫質略低於正面，768 px）。
+- **去背**：isnet，存成透明 PNG，3D 流程不會再去背一次。
+- **兩張 T4**：各做一半的項目；先做所有正面，再做其他視角（分開的程序，記憶體不會疊加）。
+- **跳過做完的**：zip 裡的 `prompts.json` 把做完的項目標成 `"done": true`；用它取代 Drive 上的那份，下次只做沒完成的。
+- 失敗的項目不影響其他項目，原因印在區塊 4 最後。
+
+```json
+{
+  "defaults": {"seed": 1000, "style": "photorealistic high-detail game asset, realistic PBR materials"},
+  "items": [
+    {"name": "weapon-two_hand_brokensword", "prompt": "a chipped steel two-handed greatsword, leather grip, round pommel"},
+    {"name": "monster-gelly", "prompt": "a small green jelly slime monster with big eyes", "views": ["front", "back"]},
+    {"name": "bigobject-kronenberg_main_gate", "prompt": "a medieval stone city gate with two towers", "views": ["front", "back"], "seed": 7}
+  ]
+}
+```
+
+| 欄位 | 說明 |
+|---|---|
+| `name` | `<類別>-<id>`，類別同 3D 流程；輸出 `<name>-<view>.png` |
+| `prompt` | 物體本身的英文描述；背景、構圖、風格會自動加上 |
+| `views` | `front`、`left`、`back`、`right` 任選；省略時只做正面；正面一定會做 |
+| `seed`、`style` | 選用；`defaults` 裡的值套用到全部項目，項目自己的優先 |
+| `done` | 跑完自動加上；拿掉就會重做 |
+
+monster、bigobject 記得要 `"views": ["front", "back"]`（3D 流程需要背面）。character 只做正面也可以，3D 流程會自己補視角。
+
+**時間（估計）**：FLUX 每張正面約 30～60 秒，補視角每項約 1～2 分鐘；第一次 session 要下載 FLUX（約 34 GB）。
+
 ## 流程與記憶體
 
 ```text
@@ -221,9 +255,11 @@ Google Drive / MyDrive / RagnarokChange / hunyuan3d /
 | `hunyuan3d2_colab_t4.ipynb` | Colab 介面：檢查環境、設定、安裝、執行批次、看結果 |
 | `hunyuan3d2_kaggle_2xt4.ipynb` | Kaggle 介面：rclone 同步 Drive、每張 GPU 一個 worker、高精度設定 |
 | `kaggle_prepare_models.ipynb` | Kaggle（CPU）：下載模型、上傳成 private Dataset |
+| `kaggle_imagegen_2xt4.ipynb` | Kaggle：prompts.json → FLUX 正面 ＋ MV-Adapter 其他視角 → 透明 PNG |
 | `imageto3d/run.py` | 批次主程式：掃描 `in/`，依序啟動各階段程序，監看新檔案；`--worker N` 時跟其他 GPU 分工 |
 | `imageto3d/drive_sync.py` | Kaggle rclone 模式：同步 Drive 的 `in/`、`out/`、`work/`、`wheels/` |
 | `imageto3d/kaggle_io.py` | Kaggle manual 模式：從分享資料夾和 Dataset 收集圖、打包成果 |
+| `imageto3d/imagegen.py` | 文字生圖：讀 prompts.json、組合描述、FLUX 與 MV-Adapter 階段、標記完成 |
 | `imageto3d/models.py` | 模型清單、下載到 Dataset 資料夾、在 `/kaggle/input` 找 Dataset |
 | `imageto3d/stage_views.py`、`stage_shape.py`、`stage_paint.py`、`stage_export.py` | 四個階段，各自是獨立程序 |
 | `imageto3d/assets.py` | 檔名解析、各階段是否需要重做、失敗紀錄、多 GPU 時的認領檔 |
