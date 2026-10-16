@@ -37,9 +37,12 @@ assert items["character-knight"]["views"] == ["front", "left", "right"]  # canon
 assert items["weapon-axe"]["views"] == ["front"]
 defaults = data["defaults"]
 knight = imagegen.full_prompt(items["character-knight"], defaults)
-assert knight.startswith("a knight, full body") and "bald" in knight and "watercolor" in knight and "grey background" in knight
+assert knight.startswith("Straight-on front view of a knight. symmetrical full body") and "bald" in knight and "watercolor" in knight and "grey background" in knight
 assert "photo," in imagegen.full_prompt(items["weapon-axe"], defaults) and "watercolor" not in imagegen.full_prompt(items["weapon-axe"], defaults)
-assert "slime, full body creature" in imagegen.full_prompt(items["monster-gelly"], defaults)  # trailing period dropped
+assert "a green slime. symmetrical full body creature" in imagegen.full_prompt(items["monster-gelly"], defaults)  # trailing period dropped
+assert imagegen.full_prompt(items["bigobject-gate"], defaults).startswith("Straight-on front elevation of a gate. perfectly symmetrical facade")
+loose = imagegen.full_prompt({"name": "bigobject-tower", "prompt": "a leaning tower", "symmetric": False}, {})
+assert "symmetrical" not in loose and "front elevation" in loose
 assert "photorealistic" in imagegen.full_prompt({"name": "prop-a", "prompt": "a cup"}, {})
 assert imagegen.seed(items["character-knight"], defaults) == 3 and imagegen.seed(items["weapon-axe"], defaults) == 7
 
@@ -66,13 +69,39 @@ cfg.save(os.path.join(root, "cfg.json")); assert imagegen.load_config(os.path.jo
 assert cfg.pipeline_config().rembg_model == "isnet-general-use"
 print("ALL OK")
 
-# Long descriptions: FLUX reads 256 T5 tokens; the 3D conditions are kept and the description's end is cut.
-words = lambda text: len(text.replace(",", " ").split())
-subject, conditions = imagegen.prompt_parts({"name": "bigobject-bridge", "prompt": "a " + "very " * 300 + "long bridge."}, {})
-text, dropped = imagegen.fit_prompt(subject, conditions, words, 256)
-assert text.endswith(conditions) and words(text) <= 256 and dropped.endswith("long bridge"), dropped[-30:]
-assert imagegen.fit_prompt("a short sword", conditions, words, 256) == (f"a short sword, {conditions}", "")
-assert imagegen.fit_prompt("x " * 10, conditions, words, 3)[0] == conditions  # nothing fits: conditions alone
-clip = imagegen.clip_prompt({"name": "weapon-a", "prompt": "a dagger"}, {})
-assert clip.startswith("single weapon standing vertically") and clip.endswith("a dagger")
+# Long descriptions: FLUX reads 256 T5 tokens; view words and 3D conditions are kept, the description's end is cut.
+words = lambda text: len(text.replace(",", " ").replace(".", " ").split())
+lead, subject, conditions = imagegen.prompt_parts({"name": "bigobject-bridge", "prompt": "a " + "very " * 300 + "long bridge."}, {})
+text, dropped = imagegen.fit_prompt(lead, subject, conditions, words, 256)
+assert text.startswith("Straight-on front elevation of a very") and text.endswith(conditions) and words(text) <= 256
+assert dropped.endswith("long bridge"), dropped[-30:]
+assert imagegen.fit_prompt(lead, "a short bridge", conditions, words, 256) == (f"{lead} a short bridge. {conditions}", "")
+assert imagegen.fit_prompt(lead, "x " * 10, conditions, words, 3)[0].endswith(conditions)  # nothing fits: conditions kept
+clip = imagegen.clip_prompt({"name": "weapon-a", "prompt": "a dagger, curved blade"}, {})
+assert clip.startswith("Straight-on front view of a dagger. symmetrical single weapon") and clip.endswith("a dagger, curved blade")
+
+# Symmetry check: a straight-on symmetrical shape scores high, a lopsided (turned) one low.
+from PIL import ImageDraw
+def shape(points, size=200):
+    image = Image.new("RGBA", (size, size), (0, 0, 0, 0)); draw = ImageDraw.Draw(image)
+    draw.polygon(points, fill=(150, 90, 60, 255)); return image
+house = shape([(50, 190), (150, 190), (150, 90), (100, 30), (50, 90)])
+turned = shape([(30, 190), (110, 190), (110, 80), (70, 30), (30, 80)])      # a house turned 45 degrees:
+ImageDraw.Draw(turned).polygon([(110, 190), (180, 160), (180, 70), (110, 80)], fill=(70, 40, 30, 255))  # dark side wall
+assert imagegen.symmetry_score(house) > 0.95 and imagegen.symmetry_score(turned) < 0.75, (
+    imagegen.symmetry_score(house), imagegen.symmetry_score(turned))
+assert imagegen.symmetry_score(Image.new("RGBA", (10, 10))) == 0.0
+
+# Views share one scale, centre and baseline, whatever size and position they were generated at.
+front = shape([(20, 120), (80, 120), (80, 20), (20, 20)])            # 60 wide, 100 tall, low in the frame
+side = shape([(100, 60), (130, 60), (130, 160), (100, 160)], 300)   # 30 wide, 100 tall, elsewhere
+placed = imagegen.normalize_views({"front": front, "left": side}, 512, 0.8)
+boxes = {view: image.getchannel("A").getbbox() for view, image in placed.items()}
+assert all(image.size == (512, 512) for image in placed.values())
+assert boxes["front"][3] == boxes["left"][3]                         # same baseline
+assert abs((boxes["front"][3] - boxes["front"][1]) - (boxes["left"][3] - boxes["left"][1])) <= 1  # same height
+assert abs((boxes["front"][0] + boxes["front"][2]) / 2 - 256) <= 1 and abs((boxes["left"][0] + boxes["left"][2]) / 2 - 256) <= 1
+assert abs((boxes["front"][3] - boxes["front"][1]) - 0.8 * 512) <= 2  # tallest fills 80 %
+wide = imagegen.normalize_views({"front": shape([(0, 90), (199, 90), (199, 110), (0, 110)])}, 512, 0.8)["front"]
+box = wide.getchannel("A").getbbox(); assert box[2] - box[0] <= 0.92 * 512 + 1   # wide subjects stay in frame
 print("ALL OK (long prompts)")

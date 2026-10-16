@@ -27,22 +27,27 @@ DEVICE = "cuda"  # tests run the same code on the CPU
 
 # Default look: RagnarokChange is a realistic 3D game, and realistic materials paint well onto meshes.
 DEFAULT_STYLE = "photorealistic high-detail game asset, realistic PBR materials"
-# Shared framing that suits image-to-3D: one subject, fully visible, flat light, plain mid-grey backdrop
-# (light objects on white get removed with the background).
-FRAMING = ("single subject centered, whole subject in frame with margin, straight front view, orthographic, "
-           "plain medium grey background, even studio lighting, no shadows, no text")
+# Image-to-3D needs a straight-on, symmetrical front view (MV-Adapter derives the other views from it at
+# 0/90/180/270 degrees), the whole subject visible, flat light without baked shadows, and a plain mid-grey
+# backdrop (light objects on white get removed with the background). The view words lead the prompt,
+# where FLUX follows them most closely.
+LEAD = {"bigobject": "Straight-on front elevation of", "environment": "Straight-on front elevation of"}
+DEFAULT_LEAD = "Straight-on front view of"
+FRAMING = ("centered with margin, whole subject in frame, orthographic, no perspective, plain medium grey "
+           "background, flat even lighting, no shadows, no highlights, no text")
 CATEGORY_HINTS = {
-    "character": "full body, standing in A-pose with arms slightly away from the body, completely bald head "
-                 "with no hair, no headwear, no weapon, no backpack",
-    "monster": "full body creature, standing",
-    "weapon": "single weapon standing vertically, tip pointing up",
-    "armor": "single armor piece displayed on its own, no person",
-    "equipment": "single item displayed on its own, no person",
-    "appearance": "hairstyle only as a standalone wig, no face, no head, no mannequin",
-    "prop": "single standalone object",
-    "object": "single standalone object",
-    "environment": "single standalone structure, no ground, no surroundings",
-    "bigobject": "entire building as a front elevation, no ground, no surroundings",
+    "character": "symmetrical full body facing the camera directly, standing in A-pose with arms slightly away "
+                 "from the body, completely bald head with no hair, no headwear, no weapon, no backpack",
+    "monster": "symmetrical full body creature facing the camera directly, standing",
+    "weapon": "symmetrical single weapon standing perfectly vertical, tip pointing up, flat side facing the camera",
+    "armor": "symmetrical single armor piece facing the camera directly, no person",
+    "equipment": "symmetrical single item facing the camera directly, no person",
+    "appearance": "hairstyle only as a standalone wig seen from the front, no face, no head, no mannequin",
+    "prop": "symmetrical single object facing the camera directly",
+    "object": "symmetrical single object facing the camera directly",
+    "environment": "symmetrical single structure seen at eye level, side walls not visible, no ground, no surroundings",
+    "bigobject": "perfectly symmetrical facade seen straight on at eye level, flat front elevation, side walls "
+                 "not visible, no ground, no surroundings",
 }
 
 
@@ -56,6 +61,12 @@ class ImageGenConfig:
     mv_repo: str = "/content/MV-Adapter"
     hunyuan_repo: str = "/content/Hunyuan3D-2"
     flux_model: str = "black-forest-labs/FLUX.1-schnell"
+    # Front views are checked for left-right symmetry (a turned or perspective view scores low): up to
+    # front_attempts seeds are tried until one reaches min_symmetry, and the most symmetrical is kept.
+    front_attempts: int = 3
+    min_symmetry: float = 0.75
+    # Share of the image height the subject fills after centering (all views of an item at one scale).
+    fill: float = 0.8
     size: int = 1024
     steps: int = 4
     max_sequence_length: int = 256
@@ -124,32 +135,43 @@ def category(item: Dict) -> str:
     return item["name"].partition("-")[0]
 
 
+def symmetric(item: Dict) -> bool:
+    """Items are symmetrical unless they say "symmetric": false (then no symmetry words or check)."""
+    return item.get("symmetric", True) is not False
+
+
 def prompt_parts(item: Dict, defaults: Dict):
-    """(subject, conditions): the user's description, and the hints, style and framing added for 3D."""
+    """(lead, subject, conditions): view words, the user's description, and the hints, style and framing."""
     style = item.get("style", defaults.get("style", DEFAULT_STYLE))
-    conditions = ", ".join(part for part in (CATEGORY_HINTS.get(category(item), ""), style, FRAMING) if part)
-    return item["prompt"].strip().rstrip("."), conditions
+    hint = CATEGORY_HINTS.get(category(item), "")
+    if not symmetric(item):
+        hint = hint.replace("perfectly symmetrical ", "").replace("symmetrical ", "")
+    conditions = ", ".join(part for part in (hint, style, FRAMING) if part)
+    return LEAD.get(category(item), DEFAULT_LEAD), item["prompt"].strip().rstrip("."), conditions
+
+
+def _join(lead: str, subject: str, conditions: str) -> str:
+    return f"{lead} {subject}. {conditions}" if subject else f"{lead} the subject. {conditions}"
 
 
 def full_prompt(item: Dict, defaults: Dict) -> str:
-    return ", ".join(prompt_parts(item, defaults))
+    return _join(*prompt_parts(item, defaults))
 
 
 def clip_prompt(item: Dict, defaults: Dict) -> str:
-    """CLIP reads only 77 tokens: conditions first, so the cut falls on the end of the description."""
-    subject, conditions = prompt_parts(item, defaults)
-    return f"{conditions}, {subject}"
+    """CLIP reads only 77 tokens: view words and conditions first, the description's end is what gets cut."""
+    lead, subject, conditions = prompt_parts(item, defaults)
+    return f"{lead} {subject.split(',')[0]}. {conditions}. {subject}"
 
 
-def fit_prompt(subject: str, conditions: str, count_tokens, limit: int):
-    """T5 prompt within `limit` tokens: the conditions are always kept, the description is shortened
-    word by word from its end. Returns (prompt, dropped words)."""
+def fit_prompt(lead: str, subject: str, conditions: str, count_tokens, limit: int):
+    """T5 prompt within `limit` tokens: view words and conditions are always kept, the description is
+    shortened word by word from its end. Returns (prompt, dropped words)."""
     words = subject.split()
     kept = len(words)
-    while kept > 0 and count_tokens(f"{' '.join(words[:kept])}, {conditions}") > limit:
+    while kept > 0 and count_tokens(_join(lead, " ".join(words[:kept]), conditions)) > limit:
         kept -= 1
-    text = f"{' '.join(words[:kept])}, {conditions}" if kept else conditions
-    return text, " ".join(words[kept:])
+    return _join(lead, " ".join(words[:kept]), conditions), " ".join(words[kept:])
 
 
 def seed(item: Dict, defaults: Dict) -> int:
@@ -195,15 +217,57 @@ def _past_deadline(config: ImageGenConfig) -> bool:
     return bool(config.deadline) and time.time() >= config.deadline
 
 
-def _save_cutout(remover, image, path: str) -> None:
+def symmetry_score(image) -> float:
+    """0..1: how well the cutout matches its mirror image (silhouette overlap times colour agreement).
+    A straight-on symmetrical view scores about 0.8-0.9; a view turned 45 degrees about 0.65."""
+    import numpy as np
+    pixels = np.asarray(image.convert("RGBA")).astype(np.float32)
+    mask = pixels[..., 3] > 128
+    if not mask.any():
+        return 0.0
+    rows, cols = np.nonzero(mask)
+    crop = pixels[rows.min():rows.max() + 1, cols.min():cols.max() + 1]
+    shape, mirrored = crop[..., 3] > 128, crop[:, ::-1, 3] > 128
+    overlap = (shape & mirrored).sum() / max((shape | mirrored).sum(), 1)
+    both = shape & mirrored
+    colour = np.abs(crop[..., :3] - crop[:, ::-1, :3]).mean(axis=2)[both].mean() / 255 if both.any() else 1.0
+    return float(overlap * (1 - colour))
+
+
+def normalize_views(images: Dict, size: int, fill: float) -> Dict:
+    """Crop every view to its subject and place all of them at one common scale: centered left-right,
+    standing on the same baseline, the tallest filling `fill` of the height (narrower if too wide)."""
+    from PIL import Image
+    crops = {}
+    for view, image in images.items():
+        image = image.convert("RGBA")
+        box = image.getchannel("A").point(lambda value: 255 if value > 16 else 0).getbbox()
+        crops[view] = image.crop(box) if box else image
+    scale = min(min(fill * size / crop.height, 0.92 * size / crop.width) for crop in crops.values())
+    height = max(round(crop.height * scale) for crop in crops.values())
+    bottom = (size + height) // 2
+    placed = {}
+    for view, crop in crops.items():
+        resized = crop.resize((max(1, round(crop.width * scale)), max(1, round(crop.height * scale))),
+                              Image.LANCZOS)
+        canvas = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+        canvas.paste(resized, ((size - resized.width) // 2, bottom - resized.height), resized)
+        placed[view] = canvas
+    return placed
+
+
+def _cutout(remover, image, name: str):
     cutout = remover(image.convert("RGB"))
     alpha = cutout.getchannel("A")
-    coverage = sum(alpha.histogram()[128:]) / (alpha.width * alpha.height)
-    if coverage < 0.02:
-        print(f"  WARNING: {os.path.basename(path)}: almost nothing left after background removal", flush=True)
+    if sum(alpha.histogram()[128:]) / (alpha.width * alpha.height) < 0.02:
+        print(f"  WARNING: {name}: almost nothing left after background removal", flush=True)
+    return cutout
+
+
+def _save_png(image, path: str) -> None:
     os.makedirs(os.path.dirname(path), exist_ok=True)
     tmp = path + ".tmp.png"
-    cutout.save(tmp)
+    image.save(tmp)
     os.replace(tmp, path)  # a finished file only ever appears complete
 
 
@@ -280,21 +344,45 @@ def run_front(config: ImageGenConfig, items: List[Dict], defaults: Dict) -> None
         started = time.time()
         try:
             print(f"[front] {item['name']}: {prompt}", flush=True)
-            latents = pipe(prompt_embeds=embeds.to(DEVICE, dtype), pooled_prompt_embeds=pooled.to(DEVICE, dtype),
-                           height=config.size, width=config.size, num_inference_steps=config.steps,
-                           guidance_scale=0.0, output_type="latent",
-                           generator=torch.Generator(DEVICE).manual_seed(seed(item, defaults))).images
-            if not torch.isfinite(latents).all():
-                raise RuntimeError(f"FLUX produced NaN in {config.transformer_dtype}; try transformer_dtype bfloat16")
-            latents = pipe._unpack_latents(latents, config.size, config.size, pipe.vae_scale_factor)
-            latents = latents.float() / pipe.vae.config.scaling_factor + pipe.vae.config.shift_factor
-            with torch.no_grad():
-                pixels = pipe.vae.decode(latents, return_dict=False)[0]
-            image = pipe.image_processor.postprocess(pixels, output_type="pil")[0]
+
+            def generate(seed_value: int):
+                latents = pipe(prompt_embeds=embeds.to(DEVICE, dtype), pooled_prompt_embeds=pooled.to(DEVICE, dtype),
+                               height=config.size, width=config.size, num_inference_steps=config.steps,
+                               guidance_scale=0.0, output_type="latent",
+                               generator=torch.Generator(DEVICE).manual_seed(seed_value)).images
+                if not torch.isfinite(latents).all():
+                    raise RuntimeError(f"FLUX produced NaN in {config.transformer_dtype}; "
+                                       "try transformer_dtype bfloat16")
+                latents = pipe._unpack_latents(latents, config.size, config.size, pipe.vae_scale_factor)
+                latents = latents.float() / pipe.vae.config.scaling_factor + pipe.vae.config.shift_factor
+                with torch.no_grad():
+                    pixels = pipe.vae.decode(latents, return_dict=False)[0]
+                return pipe.image_processor.postprocess(pixels, output_type="pil")[0]
+
+            # Try seeds until the front is symmetrical enough (a turned or perspective view is not).
+            best = None
+            attempts = config.front_attempts if symmetric(item) else 1
+            for attempt in range(attempts):
+                seed_value = seed(item, defaults) + attempt
+                raw = generate(seed_value)
+                cutout = _cutout(remover, raw, item["name"])
+                score = symmetry_score(cutout)
+                print(f"  seed {seed_value}: symmetry {score:.2f}", flush=True)
+                if best is None or score > best[0]:
+                    best = (score, seed_value, raw, cutout)
+                if not symmetric(item) or score >= config.min_symmetry:
+                    break
+                runtime.release()
+            score, seed_value, raw, cutout = best
+            if symmetric(item) and score < config.min_symmetry:
+                print(f"  WARNING: {item['name']}: no seed reached symmetry {config.min_symmetry} (best {score:.2f}, "
+                      f"seed {seed_value}); the front may be turned. Try another seed or a simpler description.",
+                      flush=True)
             os.makedirs(config.work_dir, exist_ok=True)
-            image.save(os.path.join(config.work_dir, f"{item['name']}-front-raw.jpg"), quality=95)
-            _save_cutout(remover, image, image_path(config, item, "front"))
-            print(f"[front] {item['name']}: done in {time.time() - started:.0f} s", flush=True)
+            raw.save(os.path.join(config.work_dir, f"{item['name']}-front-raw.jpg"), quality=95)
+            front = normalize_views({"front": cutout}, config.size, config.fill)["front"]
+            _save_png(front, image_path(config, item, "front"))
+            print(f"[front] {item['name']}: done in {time.time() - started:.0f} s (seed {seed_value})", flush=True)
         except Exception as error:  # one bad item must not stop the batch
             traceback.print_exc()
             _record_failure(config, item, f"front: {type(error).__name__}: {error}")
@@ -323,8 +411,12 @@ def run_views(config: ImageGenConfig, items: List[Dict], defaults: Dict) -> None
         try:
             reference = Image.open(image_path(config, item, "front"))
             asset = SimpleNamespace(category=category(item), generated_views=wanted)
-            for view, image in stage_views.generate(model, asset, pipeline_config, reference).items():
-                _save_cutout(remover, image, image_path(config, item, view))
+            views = {view: _cutout(remover, image, f"{item['name']}-{view}")
+                     for view, image in stage_views.generate(model, asset, pipeline_config, reference).items()}
+            # One scale and baseline for all views of the item (the front is placed again with them).
+            views["front"] = reference
+            for view, image in normalize_views(views, config.size, config.fill).items():
+                _save_png(image, image_path(config, item, view))
             print(f"[views] {item['name']}: {', '.join(wanted)} done in {time.time() - started:.0f} s", flush=True)
         except Exception as error:
             traceback.print_exc()

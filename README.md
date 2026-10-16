@@ -183,9 +183,17 @@ Kaggle GPU 免費額度每週約 30 小時（以 kaggle.com 帳號頁顯示為�
 | `prompt` | 物體本身的英文描述；背景、構圖、風格會自動加上，不用自己寫。FLUX 最多讀 256 個 token（約 150～180 個英文字，含自動加上的約 60 個字）；太長時會保留自動條件、從描述的**結尾**刪字，log 會印出刪掉的部分，所以重要的特徵寫在前面 |
 | `views` | `front`、`left`、`back`、`right` 任選；省略時只做正面；正面一定會做 |
 | `seed`、`style` | 選用；`defaults` 裡的值套用到全部項目，項目自己的優先 |
+| `symmetric` | 預設 `true`：描述裡加上對稱字眼，並檢查正面是否左右對稱。刻意不對稱的物體（歪斜的塔、單邊披風）寫 `false` |
 | `done` | 跑完自動加上；拿掉就會重做 |
 
 monster、bigobject 記得要 `"views": ["front", "back"]`（3D 流程需要背面）。character 只做正面也可以，3D 流程會自己補視角。
+
+**正面一定要正對**：MV-Adapter 以正面為 0° 推出 90°／180°／270° 的視角，正面若是斜的（例如 45° 透視），其他視角全部錯位。所以：
+
+- 描述最前面固定加上 `Straight-on front view of …`（建築是 `front elevation`），類別提示加上「對稱、正對鏡頭、看不到側牆、平光無陰影無高光」。
+- **對稱檢查**：去背後把正面左右翻轉比對（輪廓重疊 × 顏色一致，0～1）。在你的圖上實測：正對的劍 0.80、正對的橋 0.90、斜 45° 的房子 0.66。低於 `min_symmetry`（0.75）就換下一個 seed 重畫，最多 `front_attempts`（3）次，留分數最高的；都不夠時 log 會出現 `WARNING … may be turned`。
+- **對齊**：每個項目的所有視角用同一個縮放比例，左右置中、底部在同一條基準線，最高的佔畫面高度 80%（`fill`）。
+- 寫描述的建議：以**對稱**的設計為主；不要寫 `3/4 view`、`perspective`、`dramatic lighting` 這類字；細節太多、結構複雜的建築容易出錯，必要時拆成幾個部件分別生成。
 
 **第一次使用**：FLUX.1-schnell 在 Hugging Face 需要先同意條款：登入後到 https://huggingface.co/black-forest-labs/FLUX.1-schnell 按 Agree and access repository，在 https://huggingface.co/settings/tokens 建 Read token，存成 Kaggle Secret `HF_TOKEN` 並勾選給 notebook。
 
