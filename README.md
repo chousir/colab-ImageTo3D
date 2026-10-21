@@ -199,6 +199,40 @@ monster、bigobject 記得要 `"views": ["front", "back"]`（3D 流程需要背�
 
 **時間（估計）**：FLUX 每張正面約 30～60 秒，補視角每項約 1～2 分鐘；第一次 session 要下載 FLUX（約 34 GB）。
 
+## Kaggle 參考圖換裝（TPU v5e-8，Qwen-Image-Edit-2511）
+
+[`kaggle_imagegen_tpu_v5e.ipynb`](kaggle_imagegen_tpu_v5e.ipynb) 依參考圖保留**臉、髮型、身材比例**，只換成指定的**服裝**和**姿勢**，輸出 `<name>-front.png`（透明背景、1024×1024）。Accelerator 選 **TPU v5e-8** 並開啟 Internet。
+
+- **模型**：Qwen-Image-Edit-2511（20B，Apache-2.0，不需要 HF token），以完整 bf16 執行。transformer 切成 8 份放在 8 顆 TPU 上（每顆約 5GB）；Qwen2.5-VL 文字編碼器留在 CPU。
+- **做法**：參考圖先去背、置中貼到灰底，和 `POSE_PRESETS` 畫的骨架圖一起交給模型，再加一段指令：保留 `keep` 列出的特徵、換上 `outfit`、照骨架擺姿勢。身材是模型直接看參考圖得到的，不再由 CLIP 從固定的幾種身材描述裡挑一個。
+- **編譯**：TPU 第一次生成要先編譯，會多花幾分鐘。之後解析度固定為 832×1216，文字長度補齊到 256 的倍數，都會沿用同一份編譯結果（快取在 `xla_cache`）。
+- `debug/` 裡留著 `<name>-ref.png`（去背後的參考圖）、`-raw.png`（去背前的結果）、`-posed.png`（兩階段模式的第一階段結果）。區塊 5 會把參考圖和結果左右並排顯示。
+
+```json
+{
+  "defaults": {"seed": 42, "pose": "a-pose", "steps": 40, "cfg": 4.0, "lightning": 0, "two_stage": false,
+               "style": "photorealistic, natural skin texture"},
+  "items": [
+    {"name": "character-tifa", "outfit": "futuristic silver and black cybernetic tactical armor, combat shorts, knee-high boots"},
+    {"name": "character-mage_male", "outfit": "dark red and gold linen robes", "body": "30yo Asian male, lean athletic build", "two_stage": true}
+  ]
+}
+```
+
+| 欄位 | 說明 |
+|---|---|
+| `name` | 參考圖用相同檔名（或去掉類別的 id，例如 `tifa.png`），放在 Drive 資料夾或 Kaggle Dataset；找不到參考圖就改用純文字生成 |
+| `outfit` | 要換上的服裝（英文）。舊版的 `prompt` 欄位也可以用 |
+| `pose` | `a-pose`、`wide-a-pose`、`t-pose`、`straight`、`hands-on-hips` |
+| `keep` | 要保留的特徵，預設 `face, facial features, hairstyle, hair color, body shape, body proportions, height and skin tone` |
+| `body` | 選用。有參考圖時是補充描述；沒有參考圖時就是人物描述 |
+| `style` | 預設寫實。改成空字串就保留參考圖原本的畫風（例如動漫） |
+| `two_stage` | `true`：先只換姿勢，再只換服裝。每一步改動比較小，身材比較不會跑掉，但時間加倍 |
+| `steps`、`cfg`、`seed` | 預設 40 步、`true_cfg_scale` 4.0 |
+| `lightning` | 只能寫在 `defaults`：`8` 或 `4` 會融合 Lightning LoRA，改成 8 或 4 步、不用 CFG，速度快很多，但細節略少 |
+
+**限制**：PyTorch/XLA 在 TPU 上跑 diffusers 還不算成熟，區塊 1 會先做 smoke test，不通過就停下來，不會先花時間下載 58GB 的模型。模型卡沒有明寫支援骨架圖輸入，所以指令裡同時用文字描述姿勢。TPU 免費額度每週 20 小時，v5e-8 有時會排不到。
+
 ## 流程與記憶體
 
 ```text
@@ -266,6 +300,7 @@ Google Drive / MyDrive / RagnarokChange / hunyuan3d /
 | `hunyuan3d2_kaggle_2xt4.ipynb` | Kaggle 介面：rclone 同步 Drive、每張 GPU 一個 worker、高精度設定 |
 | `kaggle_prepare_models.ipynb` | Kaggle（CPU）：下載模型、上傳成 private Dataset |
 | `kaggle_imagegen_2xt4.ipynb` | Kaggle：prompts.json → FLUX 正面 ＋ MV-Adapter 其他視角 → 透明 PNG |
+| `kaggle_imagegen_tpu_v5e.ipynb` | Kaggle TPU v5e-8：參考圖 ＋ prompts.json → Qwen-Image-Edit-2511 換裝、換姿勢 → 透明 PNG |
 | `imageto3d/run.py` | 批次主程式：掃描 `in/`，依序啟動各階段程序，監看新檔案；`--worker N` 時跟其他 GPU 分工 |
 | `imageto3d/drive_sync.py` | Kaggle rclone 模式：同步 Drive 的 `in/`、`out/`、`work/`、`wheels/` |
 | `imageto3d/kaggle_io.py` | Kaggle manual 模式：從分享資料夾和 Dataset 收集圖、打包成果 |
