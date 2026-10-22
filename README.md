@@ -233,6 +233,20 @@ monster、bigobject 記得要 `"views": ["front", "back"]`（3D 流程需要背�
 
 **限制**：PyTorch/XLA 在 TPU 上跑 diffusers 還不算成熟，區塊 1 會先做 smoke test，不通過就停下來，不會先花時間下載 58GB 的模型。模型卡沒有明寫支援骨架圖輸入，所以指令裡同時用文字描述姿勢。TPU 免費額度每週 20 小時，v5e-8 有時會排不到。
 
+## Kaggle 3D 形狀用 TPU、貼圖用 T4（Hunyuan3D-2.1）
+
+Kaggle 一個 session 只能選一種加速器，所以分成兩份 notebook、依序執行，兩份都可以背景執行（Save & Run All）：
+
+1. [`kaggle_shape_tpu_v5e.ipynb`](kaggle_shape_tpu_v5e.ipynb)（TPU v5e-8）：用 **Hunyuan3D-2.1** 從正面圖做白模。8 顆 TPU 晶片各跑一個 worker，用 bf16 執行，網格 512（`QUALITY = "high"`）。結果在 Output 的 `hunyuan3d-shapes/work/<名稱>/`（`front.png`、`shape.glb`、`shape_import.json`），`in/` 是輸入圖的副本。
+2. [`hunyuan3d2_kaggle_2xt4.ipynb`](hunyuan3d2_kaggle_2xt4.ipynb)（2×T4）：Add Input 加入**第 1 步的 Output**，再照平常執行。區塊 2 會匯入那些白模（log 印出 `N shape(s) from the TPU notebook`），這些圖跳過視角和形狀階段，只用 Hunyuan3D-2 貼圖、輸出 GLB。輸入圖也會從第 1 步的 `in/` 讀到，不用再給一次。
+
+- **類別**：Hunyuan3D-2.1 只看正面圖。monster、bigobject 要用背面圖，預設不在 TPU 的 `CATEGORIES` 裡，照舊由 T4 的 Hunyuan3D-2mv 做；同一批圖兩邊各做各的，第 2 步會一起輸出。
+- **為了在 TPU 上跑而改寫的部分**（`imageto3d/stage_shape_tpu.py`）：MoE 層改成每個 expert 都算、再用 gate 權重加總，結果相同但形狀固定，不會每步重新編譯；取樣迴圈和網格解碼也改成固定形狀；網格解碼用 float32，因為 bf16 分辨不出 512 網格的間距。DINOv2 圖片編碼、marching cubes 和網格清理在 CPU 上做。
+- **重做**：輸入圖換新（檔案時間較新）時，TPU 端會重做。T4 端拿到不同的白模時，會刪掉舊的貼圖重新貼；要改回 T4 自己做形狀，刪掉該圖 `work/<名稱>/shape_import.json`。
+- 輸出的 JSON 裡 `shape_generator` 會寫 `tencent/Hunyuan3D-2.1/hunyuan3d-dit-v2-1`。
+
+**限制**：Hunyuan3D-2.1 用 PyTorch/XLA 跑在 TPU 上不是官方支援的組合，區塊 1 的 smoke test 只能確認 TPU 能用，模型本身要實際跑過才知道。每顆晶片的第一張圖要編譯，會多花幾分鐘。TPU 單次 session 最多約 9 小時、每週 20 小時。
+
 ## 流程與記憶體
 
 ```text
@@ -301,12 +315,15 @@ Google Drive / MyDrive / RagnarokChange / hunyuan3d /
 | `kaggle_prepare_models.ipynb` | Kaggle（CPU）：下載模型、上傳成 private Dataset |
 | `kaggle_imagegen_2xt4.ipynb` | Kaggle：prompts.json → FLUX 正面 ＋ MV-Adapter 其他視角 → 透明 PNG |
 | `kaggle_imagegen_tpu_v5e.ipynb` | Kaggle TPU v5e-8：參考圖 ＋ prompts.json → Qwen-Image-Edit-2511 換裝、換姿勢 → 透明 PNG |
+| `kaggle_shape_tpu_v5e.ipynb` | Kaggle TPU v5e-8：正面圖 → Hunyuan3D-2.1 白模，交給 2×T4 notebook 貼圖 |
 | `imageto3d/run.py` | 批次主程式：掃描 `in/`，依序啟動各階段程序，監看新檔案；`--worker N` 時跟其他 GPU 分工 |
 | `imageto3d/drive_sync.py` | Kaggle rclone 模式：同步 Drive 的 `in/`、`out/`、`work/`、`wheels/` |
 | `imageto3d/kaggle_io.py` | Kaggle manual 模式：從分享資料夾和 Dataset 收集圖、打包成果 |
 | `imageto3d/imagegen.py` | 文字生圖：讀 prompts.json、組合描述、FLUX 與 MV-Adapter 階段、標記完成 |
 | `imageto3d/models.py` | 模型清單、下載到 Dataset 資料夾、在 `/kaggle/input` 找 Dataset |
 | `imageto3d/stage_views.py`、`stage_shape.py`、`stage_paint.py`、`stage_export.py` | 四個階段，各自是獨立程序 |
+| `imageto3d/stage_shape_tpu.py` | TPU 形狀階段：Hunyuan3D-2.1，每顆晶片一個 worker，改寫成 XLA 能編譯的固定形狀 |
+| `imageto3d/shape_import.py` | 把 TPU 做好的白模匯入 work 資料夾，讓這些圖只做貼圖和輸出 |
 | `imageto3d/assets.py` | 檔名解析、各階段是否需要重做、失敗紀錄、多 GPU 時的認領檔 |
 | `imageto3d/runtime.py` | 記憶體相關工具（fp16 直接建在 GPU、mmap 讀權重、釋放記憶體） |
 | `imageto3d/config.py` | 所有設定與預設值 |

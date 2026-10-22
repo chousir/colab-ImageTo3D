@@ -10,6 +10,8 @@ from .config import CATEGORIES, CATEGORY_MODES, EXTRA_VIEWS, NAME_SUFFIXES, REQU
 
 IMAGE_EXTENSIONS = (".png", ".jpg", ".jpeg", ".webp")
 VIEW_NAMES = ("front", "left", "back", "right")
+# Written next to shape.glb by the TPU shape notebook; marks a shape the GPU pipeline imports instead of making.
+SHAPE_IMPORT_FILE = "shape_import.json"
 _warned = set()
 
 
@@ -33,7 +35,7 @@ class Asset:
     @property
     def generates_views(self) -> bool:
         """Only multiview categories without required views (character) fill gaps with MV-Adapter."""
-        return self.mode == "multiview" and self.category not in REQUIRED_VIEWS
+        return self.mode == "multiview" and self.category not in REQUIRED_VIEWS and not self.imported_shape
 
     @property
     def generated_views(self) -> List[str]:
@@ -79,11 +81,27 @@ class Asset:
     def textured_path(self) -> str:
         return os.path.join(self.work, "textured.glb")
 
+    @property
+    def shape_import_path(self) -> str:
+        return os.path.join(self.work, SHAPE_IMPORT_FILE)
+
+    @property
+    def imported_shape(self) -> bool:
+        """shape.glb was made elsewhere (the TPU shape notebook) and copied in with front.png: the views and
+        shape stages are skipped here, only paint and export run."""
+        return os.path.exists(self.shape_import_path) and os.path.exists(self.shape_path)
+
+    def shape_import(self) -> Dict:
+        with open(self.shape_import_path) as file:
+            return json.load(file)
+
     def output_path(self, config: Config, extension: str) -> str:
         return os.path.join(config.out_dir, self.output_name + extension)
 
     def needs(self, stage: str, config: Config) -> bool:
         """True when the stage output is missing or older than its input."""
+        if stage in ("views", "shape") and self.imported_shape:
+            return False
         if stage == "views":
             return _stale([self.view_path(view) for view in self.views], self.sources)
         if stage == "shape":

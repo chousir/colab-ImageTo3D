@@ -58,14 +58,22 @@ def process(_, asset: Asset, config: Config) -> None:
         shutil.copy2(asset.views_sheet, asset.output_path(config, "-views.jpg"))
 
     extents = mesh.extents
+    shape_generator = {"model": f"tencent/Hunyuan3D-2mv/{config.shape_model}",
+                       "code_commit": config.hunyuan_commit, "seed": config.shape_seed,
+                       "preset": config.presets[asset.category]}
+    license_note = ("Generated with Tencent Hunyuan3D-2 (Tencent Hunyuan Community License) from views made "
+                    "with MV-Adapter on SDXL. Not on the RagnarokChange 04-D03 whitelist until approved.")
+    if asset.imported_shape:
+        shape_generator = asset.shape_import()["shape_generator"]
+        license_note = ("Shape generated with Tencent Hunyuan3D-2.1 and painted with Tencent Hunyuan3D-2 (Tencent "
+                        "Hunyuan Community License). Not on the RagnarokChange 04-D03 whitelist until approved.")
     metadata = {
         "id": asset.asset_id,
         "category": asset.category,
         "file": os.path.basename(glb_path),
         "source": SOURCE_TAG,
         "license": LICENSE_ID,
-        "license_note": ("Generated with Tencent Hunyuan3D-2 (Tencent Hunyuan Community License) from views made "
-                         "with MV-Adapter on SDXL. Not on the RagnarokChange 04-D03 whitelist until approved."),
+        "license_note": license_note,
         "source_image": os.path.basename(asset.source),
         "supplied_views": {view: os.path.basename(path) for view, path in asset.supplied.items()},
         "generated_views": asset.generated_views,
@@ -79,9 +87,7 @@ def process(_, asset: Asset, config: Config) -> None:
         "view_generator": {"model": config.view_base_model, "adapter": config.view_adapter_repo,
                            "adapter_commit": config.view_adapter_commit, "seed": config.view_seed,
                            "azimuth_deg": config.view_azimuths},
-        "shape_generator": {"model": f"tencent/Hunyuan3D-2mv/{config.shape_model}",
-                            "code_commit": config.hunyuan_commit, "seed": config.shape_seed,
-                            "preset": config.presets[asset.category]},
+        "shape_generator": shape_generator,
         "paint_generator": {"model": f"tencent/Hunyuan3D-2/{config.paint_model}"},
         "generated_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
     }
